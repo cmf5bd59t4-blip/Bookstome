@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Meine Bibliothek</title>
+  <meta name="description" content="Persönliches Leseinventar mit Mini-Covern, Kategorien, Sternebewertung und Buchempfehlungen von Claude. Die Daten bleiben im eigenen Browser.">
+  <meta name="theme-color" content="#1F5468">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Bibliothek">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="star" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.6l2.87 6.05 6.63.78-4.9 4.53 1.3 6.55L12 17.2l-5.9 3.31 1.3-6.55-4.9-4.53 6.63-.78z"/></symbol>
+  </svg>
+
+  <main class="wrap">
+    <header>
+      <div class="eyebrow">Privates Leseinventar</div>
+      <h1 id="lib-name">Meine Bibliothek</h1>
+      <p class="lede">Gelesen und für gut befunden. Zu jedem Buch eine kurze Einordnung, eine Kategorie und deine eigene Wertung von einem bis fünf Sternen.</p>
+      <dl class="stats">
+        <div class="stat"><dt>Bücher</dt><dd id="stat-count">–</dd></div>
+        <div class="stat"><dt>Bewertet</dt><dd id="stat-rated">–</dd></div>
+        <div class="stat"><dt>Ø Sterne</dt><dd id="stat-avg">–</dd></div>
+        <div class="stat"><dt>Zeitspanne</dt><dd id="stat-span">–</dd></div>
+      </dl>
+      <div class="header-actions">
+        <button type="button" class="btn" id="add-open">Buch hinzufügen</button>
+        <button type="button" class="btn quiet" id="settings-open">Einstellungen und Daten</button>
+      </div>
+    </header>
+
+    <div class="banner" id="example-banner" hidden>
+      <span>Du siehst Beispielbücher. Sie werden nicht exportiert.</span>
+      <button type="button" class="btn quiet" id="examples-remove">Beispiele entfernen</button>
+    </div>
+
+    <!-- Einstellungen -->
+    <section class="panel" id="settings-panel" hidden aria-labelledby="settings-title">
+      <div class="panel-head">
+        <h2 id="settings-title">Einstellungen und Daten</h2>
+        <button type="button" class="link-btn" id="settings-close">Schließen</button>
+      </div>
+
+      <div class="settings-group">
+        <label class="field"><span>Name deiner Bibliothek</span><input type="text" id="s-name" maxlength="80" placeholder="Meine Bibliothek"></label>
+      </div>
+
+      <div class="settings-group">
+        <h3>Claude</h3>
+        <p class="note">Mit einem eigenen API-Schlüssel holt die App Empfehlungen und ergänzt Buchangaben per Knopfdruck. Der Schlüssel bleibt nur in diesem Browser und wird ausschließlich an Anthropic gesendet. Ohne Schlüssel kopierst du einen fertigen Prompt in die Claude-App.</p>
+        <label class="field"><span>API-Schlüssel (beginnt mit sk-ant-)</span><input type="password" id="s-key" autocomplete="off" spellcheck="false" placeholder="nicht hinterlegt"></label>
+        <label class="field"><span>Modell</span><select id="s-model"></select></label>
+        <div class="actions">
+          <button type="button" class="btn quiet" id="s-key-save">Speichern</button>
+          <button type="button" class="link-btn" id="s-key-remove">Schlüssel entfernen</button>
+          <span class="note" id="s-key-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Sichern und umziehen</h3>
+        <p class="note" id="s-backup-note">Deine Bibliothek liegt nur in diesem Browser. Exportiere sie regelmäßig als Datei, um sie zu sichern oder auf ein anderes Gerät zu bringen.</p>
+        <div class="actions">
+          <button type="button" class="btn quiet" id="s-export">Bibliothek exportieren</button>
+          <span class="file-btn"><input type="file" id="s-import" accept="application/json,.json" aria-label="Bibliothek importieren"><span class="btn quiet" aria-hidden="true">Bibliothek importieren</span></span>
+        </div>
+        <div class="banner" id="import-choice" hidden>
+          <span id="import-choice-text"></span>
+          <span class="actions">
+            <button type="button" class="btn" id="import-merge">Zusammenführen</button>
+            <button type="button" class="btn quiet" id="import-replace">Ersetzen</button>
+            <button type="button" class="link-btn" id="import-cancel">Abbrechen</button>
+          </span>
+        </div>
+        <p class="note" id="s-data-status" role="status" aria-live="polite"></p>
+      </div>
+
+      <div class="settings-group">
+        <h3>Alles löschen</h3>
+        <div class="actions" id="wipe-actions">
+          <button type="button" class="btn danger" id="s-wipe">Alle Bücher und Einstellungen löschen</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Empfehlung -->
+    <section class="panel" id="recs" aria-labelledby="recs-title" hidden>
+      <div class="panel-head">
+        <div>
+          <div class="eyebrow">Empfehlung</div>
+          <h2 id="recs-title">Dein nächstes Buch</h2>
+          <p class="panel-sub" id="recs-sub"></p>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn quiet" id="rec-new">Neue Empfehlung</button>
+          <button type="button" class="link-btn" id="rec-stop" hidden>Abbrechen</button>
+        </div>
+      </div>
+      <p class="note" id="rec-note" hidden></p>
+      <ul class="rec-list" id="rec-list"></ul>
+    </section>
+
+    <!-- Claude ohne API-Schlüssel: Prompt kopieren, Antwort einfügen -->
+    <section class="panel" id="cp-panel" hidden aria-labelledby="cp-title">
+      <div class="panel-head">
+        <h2 id="cp-title">Claude fragen</h2>
+        <button type="button" class="link-btn" id="cp-close">Schließen</button>
+      </div>
+      <ol class="steps">
+        <li>Prompt kopieren.</li>
+        <li>In der Claude-App oder auf claude.ai einfügen und senden.</li>
+        <li>Die komplette Antwort kopieren, unten einfügen und übernehmen.</li>
+      </ol>
+      <label class="field"><span>Prompt</span><textarea id="cp-prompt" class="mono" readonly rows="7"></textarea></label>
+      <div class="actions"><button type="button" class="btn quiet" id="cp-copy">Prompt kopieren</button><span class="note" id="cp-copy-status" role="status" aria-live="polite"></span></div>
+      <label class="field"><span>Antwort von Claude</span><textarea id="cp-answer" class="mono" rows="6" placeholder="Hier die Antwort einfügen"></textarea></label>
+      <div class="actions">
+        <button type="button" class="btn" id="cp-apply">Übernehmen</button>
+        <span class="note" id="cp-status" role="status" aria-live="polite"></span>
+      </div>
+      <p class="note">Schneller geht es mit einem eigenen API-Schlüssel unter „Einstellungen und Daten“.</p>
+    </section>
+
+    <!-- Buch hinzufügen / bearbeiten -->
+    <section class="panel" id="form-panel" hidden aria-labelledby="form-title">
+      <h2 id="form-title">Buch hinzufügen</h2>
+      <form id="book-form" novalidate>
+        <div class="fgrid">
+          <label class="field"><span><b>Autor</b> (Pflicht)</span><input type="text" id="f-author" autocomplete="off" required></label>
+          <label class="field"><span><b>Titel</b> (Pflicht)</span><input type="text" id="f-title" autocomplete="off" required></label>
+          <div class="full actions">
+            <button type="button" class="btn quiet" id="f-assist">Mit Claude ergänzen</button>
+            <span class="note">Füllt leere Felder wie Jahr, Kategorie und Kurzrezension. Bitte danach prüfen.</span>
+          </div>
+          <label class="field"><span>Kategorie</span><select id="f-category"></select></label>
+          <label class="field"><span>Erscheinungsjahr (Erstausgabe)</span><input type="number" id="f-year" inputmode="numeric" min="1" max="2100" step="1"></label>
+          <label class="field"><span>Originalsprache</span><input type="text" id="f-lang" list="lang-list" placeholder="z. B. aus dem Spanischen"></label>
+          <label class="field"><span>Deine Ausgabe / Verlag</span><input type="text" id="f-edition" list="edition-list" placeholder="z. B. Suhrkamp"></label>
+          <label class="field"><span>Untertitel (optional)</span><input type="text" id="f-subtitle"></label>
+          <label class="field"><span>Auszeichnung (optional)</span><input type="text" id="f-award" placeholder="z. B. Booker Prize 2024"></label>
+          <label class="field full"><span>Kurzrezension</span><textarea id="f-review" rows="5"></textarea></label>
+          <div class="field full"><span>Deine Bewertung</span><div id="f-rating"></div></div>
+          <div class="field full">
+            <span>Cover</span>
+            <div class="cover-edit">
+              <div class="crop-frame">
+                <canvas id="crop-canvas" width="320" height="480" tabindex="0" hidden aria-label="Cover-Zuschnitt. Ziehen oder Pfeiltasten verschieben das Foto."></canvas>
+                <div id="crop-placeholder"></div>
+              </div>
+              <div class="crop-controls">
+                <span class="file-btn"><input type="file" id="f-cover" accept="image/*" aria-label="Cover-Foto wählen"><span class="btn quiet" aria-hidden="true">Foto wählen</span></span>
+                <label class="field" id="zoom-field" hidden><span>Zoom. Das Foto im Rahmen ziehen, bis nur das Buch zu sehen ist.</span><input type="range" id="f-zoom" min="1" max="3" step="0.01" value="1.3"></label>
+                <button type="button" class="link-btn" id="f-cover-remove" hidden>Foto entfernen</button>
+                <p class="note" id="f-cover-note">Ohne Foto bekommt das Buch ein schlichtes Schrift-Cover.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <datalist id="lang-list">
+          <option value="deutsch"></option>
+          <option value="aus dem Englischen"></option>
+          <option value="aus dem Französischen"></option>
+          <option value="aus dem Spanischen"></option>
+          <option value="aus dem Portugiesischen"></option>
+          <option value="aus dem Italienischen"></option>
+          <option value="aus dem Tschechischen"></option>
+          <option value="aus dem Russischen"></option>
+          <option value="aus dem Polnischen"></option>
+          <option value="aus dem Ungarischen"></option>
+          <option value="aus dem Niederländischen"></option>
+          <option value="aus dem Schwedischen"></option>
+        </datalist>
+        <datalist id="edition-list"></datalist>
+        <div class="actions" style="margin-top:18px">
+          <button type="submit" class="btn" id="f-save">Speichern</button>
+          <button type="button" class="btn quiet" id="f-cancel">Abbrechen</button>
+          <span class="note" id="f-status" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+    </section>
+
+    <div class="toolbar" id="toolbar" hidden>
+      <div class="toolbar-row">
+        <div class="chips" id="chips" role="group" aria-label="Nach Kategorie filtern"></div>
+      </div>
+      <div class="toolbar-row">
+        <div class="sort">
+          <label for="sort-select">Sortieren nach</label>
+          <select id="sort-select">
+            <option value="inv">Inventarnummer</option>
+            <option value="author">Autor A–Z</option>
+            <option value="title">Titel A–Z</option>
+            <option value="year-asc">Erscheinungsjahr, älteste zuerst</option>
+            <option value="year-desc">Erscheinungsjahr, neueste zuerst</option>
+            <option value="rating">Meine Bewertung</option>
+          </select>
+        </div>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </div>
+    </div>
+
+    <ol class="books" id="books"><li class="empty">Bibliothek wird geladen …</li></ol>
+
+    <footer>
+      <span>Deine Daten bleiben in diesem Browser. Erscheinungsjahr = Erstausgabe im Original. Empfehlungen und ergänzte Rezensionen stammen von Claude.</span>
+      <span id="app-version"></span>
+    </footer>
+  </main>
+</body>
+</html>

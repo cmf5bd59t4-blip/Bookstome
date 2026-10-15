@@ -1,0 +1,17 @@
+{
+  "name": "Meine Bibliothek",
+  "short_name": "Bibliothek",
+  "description": "Persönliches Leseinventar mit Covern, Kategorien, Sternen und Buchempfehlungen von Claude.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F5F3",
+  "theme_color": "#1F5468",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

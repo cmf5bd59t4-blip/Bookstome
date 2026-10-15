@@ -1,0 +1,77 @@
+{
+  "format": "meine-bibliothek",
+  "version": 1,
+  "exportedAt": "2026-10-14T00:00:00.000Z",
+  "libraryName": "",
+  "books": [
+    {
+      "id": "beispiel-kafka-process",
+      "inv": 1,
+      "author": "Franz Kafka",
+      "sortAuthor": "Kafka",
+      "title": "Der Process",
+      "year": 1925,
+      "category": "Belletristik",
+      "lang": "deutsch",
+      "edition": "",
+      "review": "Josef K. wird eines Morgens verhaftet, ohne zu erfahren, was man ihm vorwirft, und verfängt sich in einem Gericht, das überall und nirgends ist. Kafkas unvollendeter Roman erschien postum und ist bis heute das Bild für Ohnmacht gegenüber anonymer Macht.",
+      "rating": 5
+    },
+    {
+      "id": "beispiel-mann-buddenbrooks",
+      "inv": 2,
+      "author": "Thomas Mann",
+      "sortAuthor": "Mann",
+      "title": "Buddenbrooks",
+      "subtitle": "Verfall einer Familie",
+      "year": 1901,
+      "category": "Belletristik",
+      "lang": "deutsch",
+      "edition": "",
+      "review": "Über vier Generationen erzählt Thomas Mann vom Aufstieg und langsamen Niedergang einer Lübecker Kaufmannsfamilie. Ein genaues, ironisches Gesellschaftspanorama des 19. Jahrhunderts und sein erster großer Erfolg.",
+      "rating": 4
+    },
+    {
+      "id": "beispiel-garcia-marquez-einsamkeit",
+      "inv": 3,
+      "author": "Gabriel García Márquez",
+      "sortAuthor": "García Márquez",
+      "title": "Hundert Jahre Einsamkeit",
+      "year": 1967,
+      "category": "Belletristik",
+      "lang": "aus dem Spanischen",
+      "edition": "",
+      "review": "Die Geschichte der Familie Buendía und ihres Dorfes Macondo über sieben Generationen, in der Wunder so selbstverständlich sind wie Bürgerkriege und Bananenplantagen. Der Roman, der den magischen Realismus weltberühmt machte.",
+      "rating": 5
+    },
+    {
+      "id": "beispiel-arendt-eichmann",
+      "inv": 4,
+      "author": "Hannah Arendt",
+      "sortAuthor": "Arendt",
+      "title": "Eichmann in Jerusalem",
+      "subtitle": "Ein Bericht von der Banalität des Bösen",
+      "year": 1963,
+      "category": "Sachbuch",
+      "lang": "aus dem Englischen",
+      "edition": "",
+      "review": "Arendt berichtet vom Prozess gegen Adolf Eichmann 1961 und beschreibt einen Täter, der weniger Dämon als pflichteifriger Bürokrat war. Ihr Begriff von der Banalität des Bösen löste eine heftige, bis heute geführte Debatte aus.",
+      "rating": 4
+    },
+    {
+      "id": "beispiel-zweig-welt-von-gestern",
+      "inv": 5,
+      "author": "Stefan Zweig",
+      "sortAuthor": "Zweig",
+      "title": "Die Welt von Gestern",
+      "subtitle": "Erinnerungen eines Europäers",
+      "year": 1942,
+      "category": "Autobiografisches",
+      "lang": "deutsch",
+      "edition": "",
+      "review": "Im Exil blickt Zweig auf das Wien der Jahrhundertwende, den Ersten Weltkrieg und den Untergang des alten Europa zurück. Eine Autobiografie, die zugleich ein Abschied von einer ganzen Epoche ist.",
+      "rating": 0
+    }
+  ],
+  "recommendation": null
+}
