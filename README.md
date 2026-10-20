@@ -1,8 +1,13 @@
-# Meine Bibliothek
+# Bookstome
 
-Ein persönliches Leseinventar für den Browser: Bücher mit Mini-Cover, Kategorie, Kurzrezension und eigener Sternebewertung erfassen und auf Basis der Bewertungen von Claude das nächste Buch empfehlen lassen.
+Ein persönliches Leseinventar für den Browser: Bücher mit Mini-Cover, Kategorie, Kurzrezension und eigener Sternebewertung erfassen, auf Basis der Bewertungen von Claude das nächste Buch empfehlen lassen und die Bibliotheken von Freunden ansehen.
 
-Jede Person hat ihre eigene Bibliothek. Die Daten liegen nur im Browser der jeweiligen Person, es gibt keinen Server und kein Konto. Die App funktioniert auf Handy und Computer, lässt sich auf den Startbildschirm legen und läuft danach auch offline.
+Die App läuft in zwei Betriebsarten:
+
+- **Mit Konto (Supabase)**: Jede Person meldet sich mit E-Mail und Passwort an. Die Bibliothek liegt in einer Datenbank und ist auf jedem Gerät da. Über einen Einladungslink, zum Beispiel per WhatsApp, werden zwei Personen zu Freunden und sehen gegenseitig ihre Bibliotheken. Siehe „Konten und Freunde einrichten“.
+- **Ohne Konto**: Bleiben `SUPABASE_URL` und `SUPABASE_KEY` in `config.js` leer, liegt jede Bibliothek nur im Browser der jeweiligen Person, wie in Version 1.
+
+Die App funktioniert auf Handy und Computer und lässt sich auf den Startbildschirm legen.
 
 ## Funktionen
 
@@ -13,15 +18,34 @@ Jede Person hat ihre eigene Bibliothek. Die Daten liegen nur im Browser der jewe
 - **Empfehlung**: Claude schlägt auf Basis der Sterne drei Bücher vor (naheliegend, neues Terrain, Sachbuch oder Wiederentdeckung) und wiederholt keine früheren Vorschläge.
 - **Mit Claude ergänzen**: Füllt beim Anlegen leere Felder wie Jahr, Kategorie und Kurzrezension.
 - **Sichern und umziehen**: Export als JSON-Datei, Import mit „Zusammenführen“ oder „Ersetzen“.
-- **Beispiele**: Eine leere App kann fünf Beispielbücher laden, um sie auszuprobieren.
+- **Beispiele**: Ohne Konto kann eine leere App fünf Beispielbücher laden, um sie auszuprobieren.
+- **Freunde** (mit Konto): Einladen per WhatsApp, Link oder Teilen-Menü. Jeder Link gilt für eine Person und 30 Tage. Freunde sehen Bücher, Sterne und Kurzrezensionen, aber nicht die Bücher, die beim Bearbeiten „Für Freunde verborgen“ wurden. Mit „Auch gelesen“ übernimmt man ein Buch aus der Bibliothek eines Freundes in die eigene und bewertet es selbst.
+- **Übernahme** (mit Konto): Liegen auf dem Gerät noch Bücher aus der Zeit ohne Konto, bietet die App nach der Anmeldung an, sie samt Sternen ins Konto zu übernehmen.
 
 ## Nutzen
 
-Die App ist eine statische Website. Wer den Link öffnet, bekommt eine eigene, leere Bibliothek.
+Die App ist eine statische Website. Wer den Link öffnet, legt ein Konto an (mit Supabase) oder bekommt eine eigene, leere Bibliothek im Browser (ohne Supabase).
 
 - **Auf den Startbildschirm legen**: Auf dem iPhone in Safari „Teilen“ → „Zum Home-Bildschirm“, auf Android im Browsermenü „App installieren“ oder „Zum Startbildschirm hinzufügen“.
 - **Sichern**: Unter „Einstellungen und Daten“ → „Bibliothek exportieren“. Browser können gespeicherte Daten unter Umständen löschen (z. B. beim Aufräumen von Website-Daten), deshalb regelmäßig exportieren.
-- **Gerät wechseln**: Auf dem alten Gerät exportieren, auf dem neuen Gerät importieren.
+- **Gerät wechseln**: Mit Konto einfach auf dem neuen Gerät anmelden. Ohne Konto auf dem alten Gerät exportieren und auf dem neuen importieren.
+
+## Konten und Freunde einrichten
+
+Einmalig, etwa 15 Minuten. Der kostenlose Supabase-Plan reicht für einen Freundeskreis.
+
+1. Auf [supabase.com](https://supabase.com) ein Konto anlegen (Anmeldung mit GitHub geht) und ein neues Projekt erstellen. Region am besten „Central EU (Frankfurt)“.
+2. **SQL Editor** → „New query“ → den Inhalt von `supabase-schema.sql` einfügen → „Run“. Das legt Tabellen, Zugriffsregeln und Funktionen an. Das Skript darf mehrfach laufen.
+3. **Authentication → Sign In / Providers → Email**: „Confirm email“ ausschalten. Der kostenlose Supabase-Mailversand schickt nur an Mitglieder des Projektteams und höchstens zwei Mails pro Stunde; ohne Bestätigungsmail können sich Freunde direkt mit E-Mail und Passwort anmelden.
+4. **Project Settings → API Keys**: den „Publishable key“ (`sb_publishable_…`, in älteren Projekten „anon public“) kopieren, unter **Data API** die „Project URL“. Beides in `config.js` bei `SUPABASE_KEY` und `SUPABASE_URL` eintragen und hochladen.
+
+**Niemals den „Secret key“ bzw. „service_role“ Key in die App schreiben.** Er umgeht alle Zugriffsregeln. Die App erkennt ihn und arbeitet dann ohne Konto.
+
+Sicherheit: Publishable key und URL sind öffentlich. Wer was sehen darf, regelt die Datenbank selbst mit Row Level Security: eigene Daten lesen und schreiben, Bücher von Freunden nur lesen (ohne verborgene), Einladungen und Freundschaften nur über die Funktionen in `supabase-schema.sql`. E-Mail-Adressen sieht niemand außer der Person selbst.
+
+Passwort vergessen: Mailversand ist ohne eigenen Mailserver aus (siehe Schritt 3), deshalb setzt der Betreiber das Passwort in Supabase unter **Authentication → Users** zurück. Wer später eine eigene Domain hat, kann unter **Authentication → Emails → SMTP Settings** einen Mailserver eintragen.
+
+Kostenlose Supabase-Projekte werden nach einer Woche ohne Nutzung pausiert. Wer das vermeiden will, legt im Repository die Datei `.github/workflows/keepalive.yml` an (Inhalt siehe `keepalive.yml` in diesem Ordner); GitHub ruft die Datenbank dann zweimal pro Woche kurz auf.
 
 ## Claude-Funktionen
 
@@ -61,8 +85,11 @@ Der Service Worker liefert online immer die aktuelle Version aus („Netz zuerst
 index.html                Seitengerüst und alle Bereiche (Einstellungen, Empfehlung, Formular, Liste)
 manifest.webmanifest      Angaben für „Zum Startbildschirm hinzufügen“
 sw.js                     Service Worker für Offline-Nutzung
-config.js                 Kategorien, Modelle, Versionsnummer, Cover-Maße
+config.js                 Kategorien, Modelle, Versionsnummer, Cover-Maße, Supabase-Verbindung
 store.js                  Speicherung in IndexedDB, Datenprüfung, Export/Import, Zusammenführen
+cloud.js                  Supabase: Anmeldung, Bücher in der Datenbank, Einladungen, Freunde
+supabase-schema.sql       Datenbank für Supabase: Tabellen, Zugriffsregeln, Funktionen
+keepalive.yml             Vorlage für GitHub Actions, damit das kostenlose Supabase-Projekt nicht pausiert
 claude.js                 Prompts, Aufruf der Claude API, Auswertung der Antworten
 cover.js                  Cover-Zuschnitt (Verschieben, Zoomen, JPEG-Ausgabe)
 app.js                    Oberfläche und Abläufe
@@ -115,7 +142,7 @@ Export-Dateien sehen so aus (gekürzt):
 - Farben nur über die Variablen in `styles.css` setzen, damit helles und dunkles Schema funktionieren.
 - Vor einem Pull Request einmal durchklicken: Buch anlegen, bewerten, bearbeiten, entfernen, exportieren, importieren, auf Handybreite ansehen.
 
-Ideen für die nächsten Schritte: Leseliste für noch ungelesene Bücher, Lesedatum und Notizen, Statistik nach Jahren und Kategorien, ISBN-Suche, Synchronisation zwischen Geräten.
+Ideen für die nächsten Schritte: Leseliste für noch ungelesene Bücher, Lesedatum und Notizen, Statistik nach Jahren und Kategorien, ISBN-Suche, Empfehlungen aus dem Freundeskreis, Ausleihen unter Freunden.
 
 ## Lizenz
 

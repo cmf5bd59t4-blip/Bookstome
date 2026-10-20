@@ -1,0 +1,19 @@
+# Hält das kostenlose Supabase-Projekt wach (es pausiert sonst nach einer Woche ohne Nutzung).
+# Im GitHub-Repository als .github/workflows/keepalive.yml anlegen:
+# "Add file" → "Create new file" → Name: .github/workflows/keepalive.yml → diesen Text einfügen → "Commit changes".
+# Adresse und Schlüssel sind dieselben öffentlichen Werte wie in config.js.
+name: Supabase wach halten
+on:
+  schedule:
+    - cron: "17 6 * * 1,4"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Datenbank kurz aufrufen
+        run: |
+          curl -fsS -X POST "https://ziiamxyvtpxhhxrwallw.supabase.co/rest/v1/rpc/invite_info" \
+            -H "apikey: sb_publishable_njsXuvhAXTm6jKqOJg2GqQ_IWKt5pme" \
+            -H "Content-Type: application/json" \
+            -d '{"p_token":"keepalive"}'

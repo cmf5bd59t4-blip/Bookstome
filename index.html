@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Meine Bibliothek</title>
-  <meta name="description" content="Persönliches Leseinventar mit Mini-Covern, Kategorien, Sternebewertung und Buchempfehlungen von Claude. Die Daten bleiben im eigenen Browser.">
+  <meta name="description" content="Persönliches Leseinventar mit Mini-Covern, Kategorien, Sternebewertung und Buchempfehlungen von Claude. Mit Freunden teilen, die eingeladen sind.">
   <meta name="theme-color" content="#1F5468">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Bibliothek">
+  <meta name="apple-mobile-web-app-title" content="Bookstome">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -24,31 +24,106 @@
 
   <main class="wrap">
     <header>
-      <div class="eyebrow">Privates Leseinventar</div>
+      <nav class="shelves lib-only" id="shelves" hidden aria-label="Bibliotheken"></nav>
+      <div class="eyebrow" id="eyebrow">Privates Leseinventar</div>
       <h1 id="lib-name">Meine Bibliothek</h1>
-      <p class="lede">Gelesen und für gut befunden. Zu jedem Buch eine kurze Einordnung, eine Kategorie und deine eigene Wertung von einem bis fünf Sternen.</p>
-      <dl class="stats">
+      <p class="lede" id="lede">Gelesen und für gut befunden. Zu jedem Buch eine kurze Einordnung, eine Kategorie und deine eigene Wertung von einem bis fünf Sternen.</p>
+      <dl class="stats lib-only">
         <div class="stat"><dt>Bücher</dt><dd id="stat-count">–</dd></div>
         <div class="stat"><dt>Bewertet</dt><dd id="stat-rated">–</dd></div>
         <div class="stat"><dt>Ø Sterne</dt><dd id="stat-avg">–</dd></div>
         <div class="stat"><dt>Zeitspanne</dt><dd id="stat-span">–</dd></div>
       </dl>
-      <div class="header-actions">
+      <div class="header-actions lib-only">
         <button type="button" class="btn" id="add-open">Buch hinzufügen</button>
+        <button type="button" class="btn quiet" id="friends-open" hidden>Freunde</button>
         <button type="button" class="btn quiet" id="settings-open">Einstellungen und Daten</button>
+        <button type="button" class="btn quiet" id="back-mine" hidden>Zurück zu meiner Bibliothek</button>
       </div>
     </header>
 
-    <div class="banner" id="example-banner" hidden>
+    <div class="banner notice" id="notice" hidden>
+      <span id="notice-text" role="status" aria-live="polite"></span>
+      <button type="button" class="link-btn" id="notice-close">Ausblenden</button>
+    </div>
+
+    <!-- Anmeldung (nur mit Supabase-Verbindung) -->
+    <section class="panel" id="auth-panel" hidden aria-labelledby="auth-title">
+      <div class="invite-card" id="invite-card" hidden>
+        <div class="eyebrow">Einladung</div>
+        <p id="invite-text"></p>
+      </div>
+      <div>
+        <h2 id="auth-title">Anmelden</h2>
+        <p class="panel-sub" id="auth-sub">Mit deinem Konto ist deine Bibliothek auf jedem Gerät da, und du siehst die Bibliotheken deiner Freunde.</p>
+      </div>
+      <div class="chips" role="group" aria-label="Anmelden oder Konto erstellen">
+        <button type="button" class="chip" id="auth-tab-in" aria-pressed="true">Ich habe ein Konto</button>
+        <button type="button" class="chip" id="auth-tab-up" aria-pressed="false">Neues Konto</button>
+      </div>
+      <form id="auth-form" class="auth-form" novalidate>
+        <label class="field" id="a-name-field" hidden><span>Dein Vorname (sehen deine Freunde)</span><input type="text" id="a-name" autocomplete="given-name" maxlength="60"></label>
+        <label class="field"><span>E-Mail-Adresse</span><input type="email" id="a-email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" required></label>
+        <label class="field"><span>Passwort</span><input type="password" id="a-pass" autocomplete="current-password" minlength="8" required></label>
+        <div class="actions">
+          <button type="submit" class="btn" id="a-submit">Anmelden</button>
+          <span class="note" id="a-status" role="status" aria-live="polite"></span>
+        </div>
+        <p class="note" id="a-hint">Passwort vergessen? Die Person, die Bookstome für euch betreibt, kann es zurücksetzen.</p>
+      </form>
+    </section>
+
+    <div class="banner lib-only" id="migrate-banner" hidden>
+      <span id="migrate-text"></span>
+      <span class="actions">
+        <button type="button" class="btn" id="migrate-yes">In mein Konto übernehmen</button>
+        <button type="button" class="link-btn" id="migrate-no">Nicht jetzt</button>
+      </span>
+    </div>
+
+    <!-- Freunde -->
+    <section class="panel lib-only" id="friends-panel" hidden aria-labelledby="friends-title">
+      <div class="panel-head">
+        <div>
+          <div class="eyebrow">Freunde</div>
+          <h2 id="friends-title">Bibliotheken teilen</h2>
+        </div>
+        <button type="button" class="link-btn" id="friends-close">Schließen</button>
+      </div>
+      <p class="note">Wer deinen Einladungslink annimmt, sieht deine Bücher mit Sternen und Kurzrezension, und du siehst seine. Ein Link gilt für eine Person. Bücher, die du beim Bearbeiten für Freunde verbirgst, bleiben privat.</p>
+      <div class="actions">
+        <a class="btn" id="invite-wa" href="#" target="_blank" rel="noopener" aria-disabled="true">Per WhatsApp einladen</a>
+        <button type="button" class="btn quiet" id="invite-share" hidden>Anders teilen</button>
+        <button type="button" class="btn quiet" id="invite-copy">Link kopieren</button>
+      </div>
+      <p class="note" id="invite-status" role="status" aria-live="polite"></p>
+      <div class="settings-group">
+        <h3 id="friend-count">Deine Freunde</h3>
+        <ul class="friend-list" id="friend-list"></ul>
+      </div>
+    </section>
+
+    <div class="banner lib-only" id="example-banner" hidden>
       <span>Du siehst Beispielbücher. Sie werden nicht exportiert.</span>
       <button type="button" class="btn quiet" id="examples-remove">Beispiele entfernen</button>
     </div>
 
     <!-- Einstellungen -->
-    <section class="panel" id="settings-panel" hidden aria-labelledby="settings-title">
+    <section class="panel lib-only" id="settings-panel" hidden aria-labelledby="settings-title">
       <div class="panel-head">
         <h2 id="settings-title">Einstellungen und Daten</h2>
         <button type="button" class="link-btn" id="settings-close">Schließen</button>
+      </div>
+
+      <div class="settings-group" id="account-group" hidden>
+        <h3>Konto</h3>
+        <p class="note" id="s-account"></p>
+        <label class="field"><span>Dein Name (sehen deine Freunde)</span><input type="text" id="s-display" maxlength="60"></label>
+        <div class="actions">
+          <button type="button" class="btn quiet" id="s-signout">Abmelden</button>
+          <span class="note" id="s-account-status" role="status" aria-live="polite"></span>
+        </div>
+        <div class="actions" id="account-delete-actions"></div>
       </div>
 
       <div class="settings-group">
@@ -73,6 +148,7 @@
         <div class="actions">
           <button type="button" class="btn quiet" id="s-export">Bibliothek exportieren</button>
           <span class="file-btn"><input type="file" id="s-import" accept="application/json,.json" aria-label="Bibliothek importieren"><span class="btn quiet" aria-hidden="true">Bibliothek importieren</span></span>
+          <button type="button" class="btn quiet" id="s-migrate" hidden>Bücher von diesem Gerät übernehmen</button>
         </div>
         <div class="banner" id="import-choice" hidden>
           <span id="import-choice-text"></span>
@@ -86,7 +162,7 @@
       </div>
 
       <div class="settings-group">
-        <h3>Alles löschen</h3>
+        <h3 id="wipe-title">Alles löschen</h3>
         <div class="actions" id="wipe-actions">
           <button type="button" class="btn danger" id="s-wipe">Alle Bücher und Einstellungen löschen</button>
         </div>
@@ -94,7 +170,7 @@
     </section>
 
     <!-- Empfehlung -->
-    <section class="panel" id="recs" aria-labelledby="recs-title" hidden>
+    <section class="panel lib-only" id="recs" aria-labelledby="recs-title" hidden>
       <div class="panel-head">
         <div>
           <div class="eyebrow">Empfehlung</div>
@@ -111,7 +187,7 @@
     </section>
 
     <!-- Claude ohne API-Schlüssel: Prompt kopieren, Antwort einfügen -->
-    <section class="panel" id="cp-panel" hidden aria-labelledby="cp-title">
+    <section class="panel lib-only" id="cp-panel" hidden aria-labelledby="cp-title">
       <div class="panel-head">
         <h2 id="cp-title">Claude fragen</h2>
         <button type="button" class="link-btn" id="cp-close">Schließen</button>
@@ -132,7 +208,7 @@
     </section>
 
     <!-- Buch hinzufügen / bearbeiten -->
-    <section class="panel" id="form-panel" hidden aria-labelledby="form-title">
+    <section class="panel lib-only" id="form-panel" hidden aria-labelledby="form-title">
       <h2 id="form-title">Buch hinzufügen</h2>
       <form id="book-form" novalidate>
         <div class="fgrid">
@@ -150,6 +226,7 @@
           <label class="field"><span>Auszeichnung (optional)</span><input type="text" id="f-award" placeholder="z. B. Booker Prize 2024"></label>
           <label class="field full"><span>Kurzrezension</span><textarea id="f-review" rows="5"></textarea></label>
           <div class="field full"><span>Deine Bewertung</span><div id="f-rating"></div></div>
+          <label class="check full" id="f-hidden-field" hidden><input type="checkbox" id="f-hidden"> <span>Für Freunde verbergen. Nur du siehst dieses Buch.</span></label>
           <div class="field full">
             <span>Cover</span>
             <div class="cover-edit">
@@ -189,7 +266,7 @@
       </form>
     </section>
 
-    <div class="toolbar" id="toolbar" hidden>
+    <div class="toolbar lib-only" id="toolbar" hidden>
       <div class="toolbar-row">
         <div class="chips" id="chips" role="group" aria-label="Nach Kategorie filtern"></div>
       </div>
@@ -209,10 +286,10 @@
       </div>
     </div>
 
-    <ol class="books" id="books"><li class="empty">Bibliothek wird geladen …</li></ol>
+    <ol class="books lib-only" id="books"><li class="empty">Bibliothek wird geladen …</li></ol>
 
     <footer>
-      <span>Deine Daten bleiben in diesem Browser. Erscheinungsjahr = Erstausgabe im Original. Empfehlungen und ergänzte Rezensionen stammen von Claude.</span>
+      <span id="footer-text">Deine Daten bleiben in diesem Browser. Erscheinungsjahr = Erstausgabe im Original. Empfehlungen und ergänzte Rezensionen stammen von Claude.</span>
       <span id="app-version"></span>
     </footer>
   </main>

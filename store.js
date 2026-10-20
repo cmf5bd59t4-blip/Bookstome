@@ -1,17 +1,18 @@
 // Speicherung im Browser (IndexedDB) sowie Export und Import.
-// Jede Person hat ihre Bibliothek nur im eigenen Browser; es gibt keinen Server.
+// Ohne Supabase-Verbindung liegt die Bibliothek nur hier. Mit Verbindung (cloud.js) dient
+// IndexedDB zusätzlich als Zwischenspeicher, damit die App sofort und auch offline startet.
 
 import { CATEGORIES, FORMAT, FORMAT_VERSION } from "./config.js";
 
 const DB_NAME = "meine-bibliothek";
 const DB_VERSION = 1;
-let dbPromise = null;
+const dbPromises = new Map();
 
-function openDb() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
+function openDb(name = DB_NAME) {
+  if (dbPromises.has(name)) return dbPromises.get(name);
+  const promise = new Promise((resolve, reject) => {
     if (!("indexedDB" in window)) { reject(new Error("no-indexeddb")); return; }
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const req = indexedDB.open(name, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains("books")) db.createObjectStore("books", { keyPath: "id" });
@@ -21,11 +22,13 @@ function openDb() {
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error("blocked"));
   });
-  return dbPromise;
+  dbPromises.set(name, promise);
+  promise.catch(() => dbPromises.delete(name));
+  return promise;
 }
 
-function tx(storeName, mode, run) {
-  return openDb().then((db) => new Promise((resolve, reject) => {
+function tx(storeName, mode, run, dbName = DB_NAME) {
+  return openDb(dbName).then((db) => new Promise((resolve, reject) => {
     const t = db.transaction(storeName, mode);
     const store = t.objectStore(storeName);
     let result;
@@ -53,6 +56,19 @@ export function putBook(book) { return tx("books", "readwrite", (s) => { s.put(b
 export function putBooks(books) { return tx("books", "readwrite", (s) => { books.forEach((b) => s.put(b)); }); }
 export function deleteBook(id) { return tx("books", "readwrite", (s) => { s.delete(id); }); }
 export function clearBooks() { return tx("books", "readwrite", (s) => { s.clear(); }); }
+
+/* ---------- Zwischenspeicher für die Cloud-Bibliothek (je Konto) ---------- */
+
+const cacheDb = (uid) => "bookstome-cache-" + String(uid).replace(/[^a-z0-9-]/gi, "");
+export function cacheGetAll(uid) {
+  return tx("books", "readonly", (s) => reqToPromise(s.getAll()), cacheDb(uid))
+    .then((list) => (list || []).map(sanitizeBook).filter(Boolean));
+}
+export function cacheReplace(uid, books) {
+  return tx("books", "readwrite", (s) => { s.clear(); books.forEach((b) => s.put(b)); }, cacheDb(uid));
+}
+export function cachePut(uid, books) { return tx("books", "readwrite", (s) => { books.forEach((b) => s.put(b)); }, cacheDb(uid)); }
+export function cacheDelete(uid, ids) { return tx("books", "readwrite", (s) => { ids.forEach((id) => s.delete(id)); }, cacheDb(uid)); }
 
 /* ---------- Einstellungen ---------- */
 
@@ -100,6 +116,7 @@ export function sanitizeBook(raw) {
     rating: Number.isFinite(rating) && rating >= 1 && rating <= 5 ? Math.round(rating) : 0,
     cover,
     example: raw.example === true,
+    hidden: raw.hidden === true,
     createdAt: str(raw.createdAt, 40) || new Date().toISOString(),
     updatedAt: str(raw.updatedAt, 40) || str(raw.createdAt, 40) || new Date().toISOString(),
   };

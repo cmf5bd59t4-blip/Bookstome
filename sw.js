@@ -2,7 +2,7 @@
 // Strategie "Netz zuerst": Online gibt es immer die neueste Version, offline die zuletzt geladene.
 // Bei neuen Dateien die Liste unten ergänzen und CACHE hochzählen.
 
-const CACHE = "bibliothek-v1";
+const CACHE = "bibliothek-v2";
 const FILES = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const FILES = [
   "./app.js",
   "./config.js",
   "./store.js",
+  "./cloud.js",
   "./claude.js",
   "./cover.js",
   "./beispiel-bibliothek.json",
@@ -38,7 +39,7 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(req)
       .then((res) => {
-        if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
+        if (res.ok && !new URL(req.url).search) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
         return res;
       })
       .catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html"))),

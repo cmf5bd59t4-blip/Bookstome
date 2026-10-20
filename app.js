@@ -1,12 +1,17 @@
-// Oberfläche der App: Liste, Filter, Bewertung, Formular, Empfehlung, Einstellungen.
+// Oberfläche der App: Liste, Filter, Bewertung, Formular, Empfehlung, Einstellungen,
+// und mit Supabase-Verbindung zusätzlich Anmeldung, Freunde und Freundesbibliotheken.
 
-import { APP_VERSION, CATEGORIES, RATING_LABELS, MODELS, DEFAULT_MODEL, MIN_RATED_FOR_RECOMMENDATION } from "./config.js";
+import { APP_VERSION, APP_NAME, CATEGORIES, RATING_LABELS, MODELS, DEFAULT_MODEL, MIN_RATED_FOR_RECOMMENDATION } from "./config.js";
 import * as store from "./store.js";
+import * as cloud from "./cloud.js";
 import * as claude from "./claude.js";
 import { createCropper } from "./cover.js";
 
 const $ = (id) => document.getElementById(id);
 const collator = new Intl.Collator("de", { sensitivity: "base" });
+const CLOUD = cloud.enabled();
+const INVITE_KEY = "bookstome-invite";
+const DEFAULT_LEDE = "Gelesen und für gut befunden. Zu jedem Buch eine kurze Einordnung, eine Kategorie und deine eigene Wertung von einem bis fünf Sternen.";
 
 const state = {
   books: new Map(),
@@ -18,6 +23,16 @@ const state = {
   sort: "inv",
   confirmId: null,
   pendingImport: null,
+  // nur mit Konto
+  me: null,
+  profile: { display_name: "", library_name: "" },
+  friends: [],
+  view: null, // null = eigene Bibliothek, sonst ID eines Freundes
+  friendBooks: new Map(),
+  pendingInvite: null,
+  invite: null,
+  authMode: "in",
+  confirmFriend: null,
 };
 const form = { mode: "add", id: null, rating: 0, newCover: false, removeCover: false };
 let cropper = null;
@@ -44,11 +59,53 @@ const pad = (n) => String(n).padStart(3, "0");
 const nBooks = (n) => (n === 1 ? "1 Buch" : n + " Bücher");
 const allBooks = () => [...state.books.values()];
 const realBooks = () => allBooks().filter((b) => !b.example);
+const viewingFriend = () => state.view !== null;
+const shownBooks = () => (viewingFriend() ? [...state.friendBooks.values()] : allBooks());
+const currentFriend = () => state.friends.find((f) => f.id === state.view) || null;
+const friendName = (f) => (f && f.name) || "Ohne Namen";
+const possessive = (name) => name + (/[sßxz]$/i.test(name) ? "’" : "s");
+const bookKey = (b) => store.normKey(b.author) + "|" + store.normKey(b.title);
+const mineByKey = () => new Map(allBooks().map((b) => [bookKey(b), b]));
+const errMsg = (e, fallback) => (CLOUD && e && e.message ? e.message : fallback);
 function setStatus(t) { $("status").textContent = t; }
 function showPanel(id, show) {
   $(id).hidden = !show;
   if (show) $(id).scrollIntoView({ behavior: "smooth", block: "start" });
 }
+function showNotice(text) {
+  $("notice-text").textContent = text;
+  $("notice").hidden = !text;
+}
+
+/* ---------- Speicher: im Browser oder im Konto ---------- */
+
+const lib = {
+  putBook(b) { return lib.putBooks([b]); },
+  async putBooks(books) {
+    if (!CLOUD) return store.putBooks(books);
+    await cloud.saveBooks(books);
+    store.cachePut(state.me.id, books).catch(() => {});
+  },
+  async deleteBook(id) {
+    if (!CLOUD) return store.deleteBook(id);
+    await cloud.deleteBooks([id]);
+    store.cacheDelete(state.me.id, [id]).catch(() => {});
+  },
+  async clearBooks() {
+    if (!CLOUD) return store.clearBooks();
+    await cloud.deleteAllBooks();
+    store.cacheReplace(state.me.id, []).catch(() => {});
+  },
+  async setRec(rec) {
+    if (!CLOUD) return rec ? store.setSetting("recommendation", rec) : store.deleteSetting("recommendation");
+    await cloud.updateProfile({ recommendation: rec || null });
+  },
+  async setLibraryName(name) {
+    if (!CLOUD) return store.setSetting("libraryName", name);
+    await cloud.updateProfile({ library_name: name });
+    state.profile.library_name = name;
+  },
+};
 
 /* ---------- Start ---------- */
 
@@ -57,31 +114,55 @@ async function init() {
   fillSelects();
   cropper = createCropper($("crop-canvas"));
   wireEvents();
+  captureInvite();
   try {
-    const [list, rec, name, key, model, sort, filter] = await Promise.all([
-      store.getAllBooks(),
-      store.getSetting("recommendation"),
-      store.getSetting("libraryName", ""),
+    const [key, model, sort, filter] = await Promise.all([
       store.getSetting("apiKey", ""),
       store.getSetting("model", DEFAULT_MODEL),
       store.getSetting("sort", "inv"),
       store.getSetting("filter", "Alle"),
     ]);
-    list.forEach((b) => state.books.set(b.id, b));
-    state.rec = rec && Array.isArray(rec.items) ? rec : null;
-    state.libraryName = name || "";
     state.apiKey = key || "";
     state.model = MODELS.some((m) => m.id === model) ? model : DEFAULT_MODEL;
     state.sort = sort || "inv";
     state.filter = filter || "Alle";
   } catch (e) {
-    $("books").replaceChildren(el("li", "empty", "Diese App braucht den Speicher des Browsers (IndexedDB). In manchen privaten Fenstern ist er gesperrt. Bitte in einem normalen Fenster öffnen."));
-    ["add-open", "settings-open"].forEach((id) => { $(id).disabled = true; });
-    return;
+    if (!CLOUD) {
+      $("books").replaceChildren(el("li", "empty", "Diese App braucht den Speicher des Browsers (IndexedDB). In manchen privaten Fenstern ist er gesperrt. Bitte in einem normalen Fenster öffnen."));
+      ["add-open", "settings-open"].forEach((id) => { $(id).disabled = true; });
+      return;
+    }
   }
   $("sort-select").value = state.sort;
-  renderAll();
   registerServiceWorker();
+
+  if (cloud.configState() === "unsafe") {
+    showNotice("In config.js steht ein geheimer Supabase-Schlüssel. Der darf nie in die App. Bitte durch den Publishable key ersetzen. Bis dahin läuft die App ohne Konto.");
+  }
+  if (!CLOUD) { await loadLocal(); return; }
+
+  applyCloudChrome();
+  cloud.onSignedOut(() => showAuth("Bitte melde dich erneut an."));
+  const user = cloud.currentUser();
+  if (!user) { await showAuth(); return; }
+  await startCloud(user);
+}
+
+async function loadLocal() {
+  try {
+    const [list, rec, name] = await Promise.all([
+      store.getAllBooks(),
+      store.getSetting("recommendation"),
+      store.getSetting("libraryName", ""),
+    ]);
+    list.forEach((b) => state.books.set(b.id, b));
+    state.rec = rec && Array.isArray(rec.items) ? rec : null;
+    state.libraryName = name || "";
+  } catch (e) {
+    $("books").replaceChildren(el("li", "empty", "Diese App braucht den Speicher des Browsers (IndexedDB). In manchen privaten Fenstern ist er gesperrt. Bitte in einem normalen Fenster öffnen."));
+    return;
+  }
+  renderAll();
 }
 
 function registerServiceWorker() {
@@ -99,6 +180,421 @@ function fillSelects() {
   MODELS.forEach((m) => { const o = el("option", null, m.label); o.value = m.id; model.appendChild(o); });
 }
 
+/* ---------- Konto ---------- */
+
+function applyCloudChrome() {
+  $("friends-open").hidden = false;
+  $("account-group").hidden = false;
+  $("f-hidden-field").hidden = false;
+  $("wipe-title").textContent = "Alle meine Bücher löschen";
+  $("footer-text").textContent = "Deine Bibliothek liegt in deinem " + APP_NAME + "-Konto. Sehen können sie nur Freunde, die du eingeladen hast. Erscheinungsjahr = Erstausgabe im Original. Empfehlungen und ergänzte Rezensionen stammen von Claude.";
+  if (navigator.share) $("invite-share").hidden = false;
+}
+
+function captureInvite() {
+  try {
+    const url = new URL(location.href);
+    const t = url.searchParams.get("einladung");
+    if (t !== null) {
+      if (cloud.isValidInviteToken(t)) localStorage.setItem(INVITE_KEY, t);
+      url.searchParams.delete("einladung");
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+    const stored = localStorage.getItem(INVITE_KEY);
+    state.pendingInvite = cloud.isValidInviteToken(stored) ? stored : null;
+  } catch (e) { /* ohne localStorage keine Einladung */ }
+}
+function clearInvite() {
+  state.pendingInvite = null;
+  try { localStorage.removeItem(INVITE_KEY); } catch (e) { /* ignore */ }
+}
+
+async function showAuth(message) {
+  state.me = null;
+  state.books = new Map();
+  state.friends = [];
+  state.view = null;
+  state.friendBooks = new Map();
+  state.rec = null;
+  document.body.classList.add("signed-out");
+  ["settings-panel", "friends-panel", "form-panel", "cp-panel", "migrate-banner"].forEach((id) => { $(id).hidden = true; });
+  $("auth-panel").hidden = false;
+  $("eyebrow").textContent = APP_NAME;
+  $("lib-name").textContent = "Dein Leseinventar";
+  $("lede").textContent = "Bücher erfassen, mit Sternen bewerten, Empfehlungen von Claude bekommen und die Bibliotheken deiner Freunde ansehen.";
+  document.title = APP_NAME;
+  $("a-status").textContent = message || "";
+  setAuthMode(state.pendingInvite ? "up" : "in");
+  const card = $("invite-card");
+  card.hidden = true;
+  if (!state.pendingInvite) return;
+  try {
+    const info = await cloud.inviteInfo(state.pendingInvite);
+    if (info && info.name) {
+      $("invite-text").textContent = info.name + " lädt dich zu " + APP_NAME + " ein. Lege ein Konto an. Danach seht ihr gegenseitig eure Bibliotheken, mit Sternen und Kurzrezensionen.";
+    } else {
+      clearInvite();
+      $("invite-text").textContent = "Dieser Einladungslink ist nicht mehr gültig. Hast du schon ein Konto, melde dich einfach an. Sonst bitte um einen neuen Link.";
+      setAuthMode("in");
+    }
+  } catch (e) {
+    $("invite-text").textContent = e.message;
+  }
+  card.hidden = false;
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const up = mode === "up";
+  $("auth-tab-in").setAttribute("aria-pressed", String(!up));
+  $("auth-tab-up").setAttribute("aria-pressed", String(up));
+  $("a-name-field").hidden = !up;
+  $("a-pass").autocomplete = up ? "new-password" : "current-password";
+  $("a-submit").textContent = up ? "Konto erstellen" : "Anmelden";
+  $("auth-title").textContent = up ? "Neues Konto" : "Anmelden";
+  $("a-hint").hidden = up;
+}
+
+async function submitAuth(e) {
+  e.preventDefault();
+  const status = $("a-status");
+  const email = $("a-email").value.trim();
+  const pass = $("a-pass").value;
+  const name = $("a-name").value.trim();
+  const up = state.authMode === "up";
+  if (up && !name) { status.textContent = "Bitte deinen Vornamen eintragen. Den sehen deine Freunde."; $("a-name").focus(); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { status.textContent = "Bitte eine gültige E-Mail-Adresse eintragen."; $("a-email").focus(); return; }
+  if (up && pass.length < 8) { status.textContent = "Das Passwort braucht mindestens 8 Zeichen."; $("a-pass").focus(); return; }
+  if (!pass) { status.textContent = "Bitte dein Passwort eintragen."; $("a-pass").focus(); return; }
+  const btn = $("a-submit");
+  btn.disabled = true;
+  status.textContent = up ? "Konto wird angelegt …" : "Anmelden …";
+  try {
+    const user = up ? await cloud.signUp(email, pass, name) : await cloud.signIn(email, pass);
+    $("a-pass").value = "";
+    status.textContent = "";
+    await startCloud(user);
+  } catch (err) {
+    status.textContent = err.message || "Das hat nicht geklappt.";
+    if (err.code === "user_already_exists" || err.code === "email_exists") setAuthMode("in");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function startCloud(user) {
+  state.me = user;
+  document.body.classList.remove("signed-out");
+  $("auth-panel").hidden = true;
+  $("invite-card").hidden = true;
+  try {
+    const cached = await store.cacheGetAll(user.id);
+    if (cached.length) { state.books = new Map(cached.map((b) => [b.id, b])); renderAll(); }
+  } catch (e) { /* kein Zwischenspeicher */ }
+  if (!state.books.size) $("books").replaceChildren(el("li", "empty", "Bibliothek wird geladen …"));
+  try {
+    const [profile, books, friends] = await Promise.all([cloud.getProfile(), cloud.listBooks(), cloud.listFriends()]);
+    state.profile = { display_name: (profile && profile.display_name) || "", library_name: (profile && profile.library_name) || "" };
+    state.libraryName = state.profile.library_name;
+    state.rec = profile && profile.recommendation && Array.isArray(profile.recommendation.items) ? profile.recommendation : null;
+    const clean = books.map(store.sanitizeBook).filter(Boolean);
+    state.books = new Map(clean.map((b) => [b.id, b]));
+    state.friends = friends;
+    store.cacheReplace(user.id, clean).catch(() => {});
+  } catch (e) {
+    if (e.code === "session") return;
+    showNotice(state.books.size ? "Keine Verbindung zum Server. Du siehst den zuletzt geladenen Stand; Änderungen gehen gerade nicht." : e.message);
+  }
+  if (!state.me) return;
+  renderAll();
+  await acceptPendingInvite();
+  await checkMigration(false);
+}
+
+async function acceptPendingInvite() {
+  const token = state.pendingInvite;
+  if (!token || !state.me) return;
+  try {
+    const friend = await cloud.acceptInvite(token);
+    clearInvite();
+    state.friends = await cloud.listFriends().catch(() => state.friends);
+    const name = (friend && friend.name) || "deinem Freund";
+    await openFriend(friend.id);
+    showNotice("Du und " + name + " seid jetzt verbunden. " + name + " sieht ab jetzt auch deine Bibliothek.");
+  } catch (e) {
+    if (e.code === "network" || e.code === "session") return;
+    clearInvite();
+    showNotice(e.message);
+  }
+}
+
+async function signOut() {
+  const uid = state.me && state.me.id;
+  await cloud.signOut();
+  if (uid) store.cacheReplace(uid, []).catch(() => {});
+  $("a-email").value = "";
+  await showAuth("Du bist abgemeldet.");
+}
+
+function resetDeleteAccount() {
+  $("account-delete-actions").replaceChildren(button("link-btn danger", "Konto löschen", askDeleteAccount, "s-delete-account"));
+}
+function askDeleteAccount() {
+  $("account-delete-actions").replaceChildren(
+    el("span", "note warn", "Konto mit allen Büchern, Sternen und Freundschaften endgültig löschen? Exportiere vorher, wenn du die Bücher behalten willst."),
+    button("btn danger", "Ja, Konto löschen", deleteAccount, "s-delete-yes"),
+    button("link-btn", "Abbrechen", resetDeleteAccount, "s-delete-no"),
+  );
+  $("s-delete-no").focus();
+}
+async function deleteAccount() {
+  const uid = state.me && state.me.id;
+  try {
+    await cloud.deleteAccount();
+    if (uid) { store.cacheReplace(uid, []).catch(() => {}); store.deleteSetting("migrated-" + uid).catch(() => {}); }
+    resetDeleteAccount();
+    await showAuth("Dein Konto ist gelöscht.");
+  } catch (e) {
+    $("s-account-status").textContent = errMsg(e, "Das Löschen hat nicht geklappt.");
+  }
+}
+
+async function saveDisplayName() {
+  const name = $("s-display").value.trim().slice(0, 60);
+  if (!name) { $("s-account-status").textContent = "Bitte einen Namen eintragen."; return; }
+  try {
+    await cloud.updateProfile({ display_name: name });
+    state.profile.display_name = name;
+    $("s-account-status").textContent = "Gespeichert.";
+    renderHeader();
+  } catch (e) { $("s-account-status").textContent = errMsg(e, "Speichern hat nicht geklappt."); }
+}
+
+/* ---------- Bücher von diesem Gerät ins Konto übernehmen ---------- */
+
+async function localBooks() {
+  try { return (await store.getAllBooks()).filter((b) => !b.example); } catch (e) { return []; }
+}
+
+async function checkMigration(force) {
+  if (!state.me) return;
+  const local = await localBooks();
+  $("s-migrate").hidden = !local.length;
+  if (!local.length) return;
+  const { toWrite } = store.mergeBooks(allBooks(), local);
+  const seen = await store.getSetting("migrated-" + state.me.id, null).catch(() => null);
+  if (!toWrite.length || (seen && !force)) {
+    if (force) showNotice("Alle Bücher von diesem Gerät sind schon in deinem Konto.");
+    return;
+  }
+  $("migrate-text").textContent = allBooks().length
+    ? "Auf diesem Gerät liegen " + nBooks(toWrite.length) + ", die in deinem Konto noch fehlen oder hier neuer sind. Übernehmen?"
+    : "Auf diesem Gerät liegen " + nBooks(local.length) + " aus der Zeit vor deinem Konto. Sollen sie in dein Konto? Deine Sterne bleiben erhalten.";
+  $("migrate-banner").hidden = false;
+  if (force) $("migrate-banner").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function migrate() {
+  const btn = $("migrate-yes");
+  btn.disabled = true; btn.textContent = "Wird übernommen …";
+  try {
+    const local = await localBooks();
+    const { toWrite, added, updated } = store.mergeBooks(allBooks(), local);
+    await lib.putBooks(toWrite);
+    toWrite.forEach((b) => state.books.set(b.id, b));
+    if (!state.rec) {
+      const r = await store.getSetting("recommendation").catch(() => null);
+      if (r && Array.isArray(r.items)) { state.rec = r; await lib.setRec(r); }
+    }
+    if (!state.libraryName) {
+      const n = await store.getSetting("libraryName", "").catch(() => "");
+      if (n) { await lib.setLibraryName(n); state.libraryName = n; }
+    }
+    await store.setSetting("migrated-" + state.me.id, new Date().toISOString());
+    $("migrate-banner").hidden = true;
+    state.view = null;
+    renderAll();
+    showNotice(nBooks(added) + " übernommen" + (updated ? ", " + updated + " aktualisiert" : "") + ". Deine Bibliothek liegt jetzt in deinem Konto.");
+  } catch (e) {
+    showNotice(errMsg(e, "Die Übernahme hat nicht geklappt."));
+  } finally {
+    btn.disabled = false; btn.textContent = "In mein Konto übernehmen";
+  }
+}
+
+async function dismissMigration() {
+  $("migrate-banner").hidden = true;
+  if (state.me) await store.setSetting("migrated-" + state.me.id, "später").catch(() => {});
+  showNotice("Du kannst die Bücher jederzeit unter „Einstellungen und Daten“ übernehmen.");
+}
+
+/* ---------- Freunde ---------- */
+
+function closePanels() {
+  ["settings-panel", "friends-panel", "form-panel", "cp-panel"].forEach((id) => { $(id).hidden = true; });
+  $("add-open").disabled = false;
+}
+
+async function openFriend(id) {
+  closePanels();
+  state.view = id;
+  state.friendBooks = new Map();
+  state.filter = "Alle";
+  state.confirmId = null;
+  renderAll();
+  $("books").replaceChildren(el("li", "empty", "Bibliothek wird geladen …"));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  try {
+    const books = (await cloud.listBooks(id)).map(store.sanitizeBook).filter(Boolean);
+    if (state.view !== id) return;
+    state.friendBooks = new Map(books.map((b) => [b.id, b]));
+  } catch (e) {
+    if (state.view === id) showNotice(e.message);
+  }
+  if (state.view === id) renderAll();
+}
+
+function showMine() {
+  state.view = null;
+  state.friendBooks = new Map();
+  state.filter = "Alle";
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function openFriends() {
+  if (!$("friends-panel").hidden) { $("friends-panel").hidden = true; return; }
+  state.confirmFriend = null;
+  renderFriendList();
+  showPanel("friends-panel", true);
+  prepareInvite(false);
+  try {
+    state.friends = await cloud.listFriends();
+    renderFriendList();
+    renderHeader();
+  } catch (e) { /* Liste vom Start bleibt */ }
+}
+
+function inviteLink(token) { return location.origin + location.pathname + "?einladung=" + token; }
+function inviteMessage(link) {
+  return "Hallo! Ich sammle meine gelesenen Bücher in " + APP_NAME + ", mit Sternen und kurzen Rezensionen. Über diesen Link siehst du meine Bibliothek und kannst deine eigene anlegen: " + link;
+}
+function setInviteReady(ok) {
+  const a = $("invite-wa");
+  a.setAttribute("aria-disabled", String(!ok));
+  a.classList.toggle("disabled", !ok);
+  $("invite-copy").disabled = !ok;
+  $("invite-share").disabled = !ok;
+}
+
+async function prepareInvite(quiet) {
+  setInviteReady(false);
+  state.invite = null;
+  if (!quiet) $("invite-status").textContent = "Einladungslink wird vorbereitet …";
+  try {
+    const token = await cloud.createInvite();
+    const link = inviteLink(token);
+    state.invite = { token, link, message: inviteMessage(link) };
+    $("invite-wa").href = "https://wa.me/?text=" + encodeURIComponent(state.invite.message);
+    setInviteReady(true);
+    if (!quiet) $("invite-status").textContent = "";
+  } catch (e) {
+    $("invite-status").textContent = e.message;
+  }
+}
+
+function inviteSent(text) {
+  $("invite-status").textContent = text;
+  setTimeout(() => prepareInvite(true), 400);
+}
+
+function onInviteWhatsApp(e) {
+  if (!state.invite) { e.preventDefault(); return; }
+  inviteSent("WhatsApp ist geöffnet. Wähle dort die Person aus. Für die nächste Einladung gibt es automatisch einen neuen Link.");
+}
+
+async function onInviteCopy() {
+  if (!state.invite) return;
+  try {
+    await navigator.clipboard.writeText(state.invite.message);
+    inviteSent("Einladung kopiert. Füge sie in eine Nachricht an die Person ein.");
+  } catch (e) {
+    $("invite-status").textContent = "Kopieren ging nicht. Hier ist der Link: " + state.invite.link;
+    setTimeout(() => prepareInvite(true), 400);
+  }
+}
+
+async function onInviteShare() {
+  if (!state.invite || !navigator.share) return;
+  try {
+    await navigator.share({ title: APP_NAME, text: state.invite.message });
+    inviteSent("Einladung geteilt. Für die nächste Person gibt es einen neuen Link.");
+  } catch (e) { /* abgebrochen */ }
+}
+
+function renderFriendList() {
+  const ul = $("friend-list");
+  $("friend-count").textContent = state.friends.length ? "Deine Freunde (" + state.friends.length + ")" : "Deine Freunde";
+  if (!state.friends.length) {
+    ul.replaceChildren(el("li", "friend none", "Noch niemand. Schick deinen ersten Einladungslink, zum Beispiel per WhatsApp."));
+    return;
+  }
+  ul.replaceChildren(...state.friends.map((f) => {
+    const li = el("li", "friend");
+    const info = el("div", "friend-info");
+    info.append(el("strong", null, friendName(f)), el("span", "note", nBooks(Number(f.books) || 0) + (f.library ? " · " + f.library : "")));
+    const acts = el("div", "actions");
+    if (state.confirmFriend === f.id) {
+      acts.append(
+        el("span", "note warn", "Verbindung mit " + friendName(f) + " beenden? Ihr seht eure Bibliotheken dann nicht mehr."),
+        button("link-btn danger", "Ja, beenden", () => doRemoveFriend(f), "unfriend-yes-" + f.id),
+        button("link-btn", "Abbrechen", () => { state.confirmFriend = null; renderFriendList(); }),
+      );
+    } else {
+      acts.append(
+        button("btn quiet", "Bibliothek ansehen", () => openFriend(f.id), "friend-open-" + f.id),
+        button("link-btn", "Entfernen", () => { state.confirmFriend = f.id; renderFriendList(); }, "unfriend-" + f.id),
+      );
+    }
+    li.append(info, acts);
+    return li;
+  }));
+}
+
+async function doRemoveFriend(f) {
+  try {
+    await cloud.removeFriend(f.id);
+    state.friends = state.friends.filter((x) => x.id !== f.id);
+    state.confirmFriend = null;
+    if (state.view === f.id) state.view = null;
+    renderFriendList();
+    renderAll();
+    $("invite-status").textContent = "Verbindung mit " + friendName(f) + " beendet.";
+  } catch (e) {
+    $("invite-status").textContent = e.message;
+  }
+}
+
+async function adoptBook(fb) {
+  if (mineByKey().has(bookKey(fb))) return;
+  const btn = $("adopt-" + fb.id);
+  if (btn) btn.disabled = true;
+  const now = new Date().toISOString();
+  const book = store.sanitizeBook({
+    ...fb, id: store.makeId(fb.author, fb.title), inv: nextInv(), rating: 0, edition: "",
+    hidden: false, example: false, createdAt: now, updatedAt: now,
+  });
+  try {
+    await lib.putBook(book);
+    state.books.set(book.id, book);
+    refreshMineSlot(fb.id, true);
+    setStatus("„" + fb.title + "“ steht jetzt in deiner Bibliothek. Vergib gleich deine Sterne.");
+  } catch (e) {
+    setStatus(errMsg(e, "Übernehmen hat nicht geklappt."));
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* ---------- Rendern ---------- */
 
 function renderAll() {
@@ -111,14 +607,51 @@ function renderAll() {
 }
 
 function renderHeader() {
-  const name = state.libraryName || "Meine Bibliothek";
-  $("lib-name").textContent = name;
-  document.title = name;
+  const fv = viewingFriend();
+  if (fv) {
+    const f = currentFriend();
+    const name = friendName(f);
+    const title = (f && f.library) || possessive(name) + " Bibliothek";
+    $("eyebrow").textContent = "Bibliothek von " + name;
+    $("lib-name").textContent = title;
+    const common = state.friendBooks.size ? [...state.friendBooks.values()].filter((b) => mineByKey().has(bookKey(b))).length : 0;
+    $("lede").textContent = (common === 1 ? "Ein Buch habt ihr beide gelesen. " : common > 1 ? common + " Bücher habt ihr beide gelesen. " : "") +
+      "Hast du ein Buch auch gelesen, tippe auf „Auch gelesen“. Dann steht es in deiner Bibliothek und du kannst es selbst bewerten.";
+    document.title = title + " · " + APP_NAME;
+  } else {
+    const own = CLOUD && state.profile.display_name ? possessive(state.profile.display_name) + " Bibliothek" : "Meine Bibliothek";
+    const name = state.libraryName || own;
+    $("eyebrow").textContent = CLOUD ? APP_NAME + " · Privates Leseinventar" : "Privates Leseinventar";
+    $("lib-name").textContent = name;
+    $("lede").textContent = DEFAULT_LEDE;
+    document.title = name;
+  }
+  $("add-open").hidden = fv;
+  $("settings-open").hidden = fv;
+  $("back-mine").hidden = !fv;
+  $("friends-open").hidden = !CLOUD || fv;
+  if (CLOUD) $("friends-open").textContent = state.friends.length ? "Freunde (" + state.friends.length + ")" : "Freunde einladen";
+  const ratingOpt = $("sort-select").querySelector('option[value="rating"]');
+  if (ratingOpt) ratingOpt.textContent = fv ? "Bewertung" : "Meine Bewertung";
+  renderShelves();
   renderStats();
 }
 
+function renderShelves() {
+  const nav = $("shelves");
+  const show = CLOUD && !!state.me && state.friends.length > 0;
+  nav.hidden = !show;
+  if (!show) return;
+  const items = [{ id: null, label: "Meine Bibliothek" }, ...state.friends.map((f) => ({ id: f.id, label: friendName(f) }))];
+  nav.replaceChildren(...items.map((it) => {
+    const b = button("chip", it.label, () => (it.id ? openFriend(it.id) : showMine()), it.id ? "shelf-" + it.id : "shelf-mine");
+    b.setAttribute("aria-pressed", String(state.view === it.id));
+    return b;
+  }));
+}
+
 function renderStats() {
-  const books = allBooks();
+  const books = shownBooks();
   const vals = books.map((b) => b.rating).filter(Boolean);
   $("stat-count").textContent = String(books.length);
   $("stat-rated").textContent = books.length ? vals.length + " / " + books.length : "–";
@@ -130,11 +663,11 @@ function renderStats() {
 }
 
 function renderExampleBanner() {
-  $("example-banner").hidden = !allBooks().some((b) => b.example);
+  $("example-banner").hidden = viewingFriend() || !allBooks().some((b) => b.example);
 }
 
 function renderChips() {
-  const books = allBooks();
+  const books = shownBooks();
   $("toolbar").hidden = !books.length;
   const counts = { Alle: books.length };
   books.forEach((b) => { counts[b.category] = (counts[b.category] || 0) + 1; });
@@ -143,7 +676,7 @@ function renderChips() {
   $("chips").replaceChildren(...names.map((name) => {
     const b = button("chip", null, () => {
       state.filter = name;
-      store.setSetting("filter", name).catch(() => {});
+      if (!viewingFriend()) store.setSetting("filter", name).catch(() => {});
       state.confirmId = null;
       renderChips(); renderList();
     }, "chip-" + store.normKey(name));
@@ -154,7 +687,7 @@ function renderChips() {
 }
 
 function sortedVisible() {
-  const arr = allBooks().filter((b) => state.filter === "Alle" || b.category === state.filter);
+  const arr = shownBooks().filter((b) => state.filter === "Alle" || b.category === state.filter);
   arr.sort((a, b) => {
     switch (state.sort) {
       case "author": return collator.compare(a.sortAuthor, b.sortAuthor) || (a.year || 0) - (b.year || 0);
@@ -170,25 +703,49 @@ function sortedVisible() {
 
 function renderList() {
   const list = $("books");
-  if (!state.books.size) {
+  if (viewingFriend()) {
+    if (!state.friendBooks.size) {
+      const li = el("li", "empty");
+      li.append(el("strong", null, friendName(currentFriend()) + " hat noch keine Bücher eingetragen."), el("span", null, "Sobald Bücher dazukommen, siehst du sie hier."));
+      list.replaceChildren(li);
+      return;
+    }
+  } else if (!state.books.size) {
     const li = el("li", "empty");
-    li.append(
-      el("strong", null, "Deine Bibliothek ist noch leer."),
-      el("span", null, "Lege dein erstes Buch an, hole eine gesicherte Bibliothek zurück oder sieh dir die App mit ein paar Beispielbüchern an."),
-    );
     const actions = el("div", "actions");
-    actions.append(
-      button("btn", "Erstes Buch hinzufügen", () => openForm("add")),
-      button("btn quiet", "Bibliothek importieren", () => $("s-import").click()),
-      button("btn quiet", "Beispiele ansehen", loadExamples, "load-examples"),
-    );
+    if (CLOUD) {
+      li.append(
+        el("strong", null, "Deine Bibliothek ist noch leer."),
+        el("span", null, state.friends.length
+          ? "Lege dein erstes Buch an oder sieh dir die Bibliothek deiner Freunde an und übernimm, was du auch gelesen hast."
+          : "Lege dein erstes Buch an, hole eine gesicherte Bibliothek zurück oder lade Freunde ein."),
+      );
+      actions.append(button("btn", "Erstes Buch hinzufügen", () => openForm("add")));
+      if (state.friends.length) {
+        const f = state.friends[0];
+        actions.append(button("btn quiet", "Bibliothek von " + friendName(f) + " ansehen", () => openFriend(f.id)));
+      } else {
+        actions.append(button("btn quiet", "Freunde einladen", openFriends));
+      }
+      actions.append(button("btn quiet", "Bibliothek importieren", () => $("s-import").click()));
+    } else {
+      li.append(
+        el("strong", null, "Deine Bibliothek ist noch leer."),
+        el("span", null, "Lege dein erstes Buch an, hole eine gesicherte Bibliothek zurück oder sieh dir die App mit ein paar Beispielbüchern an."),
+      );
+      actions.append(
+        button("btn", "Erstes Buch hinzufügen", () => openForm("add")),
+        button("btn quiet", "Bibliothek importieren", () => $("s-import").click()),
+        button("btn quiet", "Beispiele ansehen", loadExamples, "load-examples"),
+      );
+    }
     li.append(actions);
     list.replaceChildren(li);
     return;
   }
   const arr = sortedVisible();
   if (!arr.length) { list.replaceChildren(el("li", "empty", "In der Kategorie „" + state.filter + "“ steht noch kein Buch.")); return; }
-  list.replaceChildren(...arr.map(buildRow));
+  list.replaceChildren(...arr.map(viewingFriend() ? buildFriendRow : buildRow));
 }
 
 function typeCover(b) {
@@ -199,14 +756,13 @@ function typeCover(b) {
   return t;
 }
 
-function buildRow(b) {
+/** Gemeinsamer Aufbau einer Buchzeile: Cover, Kopf, Rezension. */
+function buildBookBase(b, own) {
   const li = el("li", "book");
-  li.id = "buch-" + b.id;
-
   const coverCell = el("div", "cover-cell");
   if (b.cover) {
     const img = el("img", "cover");
-    img.src = b.cover; img.alt = "Cover: " + b.title; img.width = 200; img.height = 300; img.decoding = "async";
+    img.src = b.cover; img.alt = "Cover: " + b.title; img.width = 200; img.height = 300; img.decoding = "async"; img.loading = "lazy";
     coverCell.append(img);
   } else {
     coverCell.append(typeCover(b));
@@ -225,16 +781,74 @@ function buildRow(b) {
   if (b.edition) meta.append(el("span", null, "Ausgabe: " + b.edition));
   if (b.award) meta.append(el("span", "tag", b.award));
   if (b.example) meta.append(el("span", "tag example", "Beispiel"));
+  if (own && CLOUD && b.hidden) meta.append(el("span", "tag private", "Nur für dich"));
   head.append(meta);
   li.append(head);
 
   const text = el("div", "text");
   if (b.review) text.append(el("p", "review", b.review));
+  li.append(text);
+  return { li, text };
+}
+
+function buildRow(b) {
+  const { li, text } = buildBookBase(b, true);
+  li.id = "buch-" + b.id;
   const slot = el("div", "rating-slot");
   slot.append(buildRating(b));
   text.append(slot, buildRowActions(b));
-  li.append(text);
   return li;
+}
+
+function readOnlyStars(n) {
+  const box = el("span", "ro-stars");
+  box.setAttribute("role", "img");
+  box.setAttribute("aria-label", n ? n + " von 5 Sternen" : "nicht bewertet");
+  for (let i = 1; i <= 5; i++) {
+    const s = el("span", "ro-star" + (i <= n ? " on" : ""));
+    s.innerHTML = '<svg aria-hidden="true"><use href="#star"></use></svg>';
+    box.append(s);
+  }
+  return box;
+}
+
+function buildFriendRow(fb) {
+  const { li, text } = buildBookBase(fb, false);
+  li.id = "freund-" + fb.id;
+  const name = friendName(currentFriend());
+  const theirs = el("div", "rating ro");
+  theirs.append(
+    readOnlyStars(fb.rating),
+    el("span", "rating-label" + (fb.rating ? " set" : ""), fb.rating ? possessive(name) + " Wertung: " + RATING_LABELS[fb.rating] : "Von " + name + " noch nicht bewertet"),
+  );
+  const slot = el("div", "mine-slot");
+  slot.id = "mine-" + fb.id;
+  text.append(theirs, slot);
+  fillMineSlot(slot, fb);
+  return li;
+}
+
+function fillMineSlot(slot, fb) {
+  const mine = mineByKey().get(bookKey(fb));
+  if (mine) {
+    const box = el("div", "mine");
+    box.append(
+      el("span", "mine-label", "In deiner Bibliothek · deine Wertung"),
+      buildStars(mine.rating, "my-" + fb.id, "Deine Bewertung für " + fb.title, (n) => setRating(mine.id, n)),
+    );
+    slot.replaceChildren(box);
+  } else {
+    slot.replaceChildren(button("btn quiet small", "Auch gelesen", () => adoptBook(fb), "adopt-" + fb.id));
+  }
+}
+
+function refreshMineSlot(fbId, focusStars) {
+  const slot = $("mine-" + fbId), fb = state.friendBooks.get(fbId);
+  if (!slot || !fb) return;
+  const focusId = slot.contains(document.activeElement) ? document.activeElement.id : null;
+  fillMineSlot(slot, fb);
+  const f = (focusId && $(focusId)) || (focusStars ? $("my-" + fbId + "-1") : null);
+  if (f) f.focus();
 }
 
 function buildStars(current, idPrefix, label, onPick) {
@@ -302,9 +916,14 @@ async function setRating(id, n) {
   if (!b) return;
   b.rating = b.rating === n ? 0 : n;
   b.updatedAt = new Date().toISOString();
-  renderRating(id); renderStats(); renderRecs();
-  try { await store.putBook(b); setStatus("Gespeichert"); }
-  catch (e) { setStatus("Speichern hat nicht geklappt. Ist der Speicher des Browsers voll?"); }
+  if (viewingFriend()) {
+    const fb = [...state.friendBooks.values()].find((x) => bookKey(x) === bookKey(b));
+    if (fb) refreshMineSlot(fb.id, false);
+  } else {
+    renderRating(id); renderStats(); renderRecs();
+  }
+  try { await lib.putBook(b); setStatus("Gespeichert"); }
+  catch (e) { setStatus(errMsg(e, "Speichern hat nicht geklappt. Ist der Speicher des Browsers voll?")); }
 }
 
 /* ---------- Empfehlung ---------- */
@@ -321,8 +940,8 @@ function ownedTitleKeys() { return new Set(allBooks().map((b) => claude.normTitl
 function renderRecs() {
   const section = $("recs");
   const pool = recPool();
-  section.hidden = !pool.length;
-  if (!pool.length) return;
+  section.hidden = !pool.length || viewingFriend();
+  if (section.hidden) return;
   const rated = pool.filter((b) => b.rating).length;
   const rec = state.rec;
   const sub = $("recs-sub"), list = $("rec-list"), note = $("rec-note");
@@ -405,9 +1024,9 @@ async function applyRecommendation(items, source) {
     basisKey: basisKey(),
     ratedCount: pool.filter((b) => b.rating).length,
   };
-  await store.setSetting("recommendation", state.rec);
   renderRecs();
-  setStatus("Neue Empfehlung gespeichert.");
+  try { await lib.setRec(state.rec); setStatus("Neue Empfehlung gespeichert."); }
+  catch (e) { setStatus(errMsg(e, "Die Empfehlung ließ sich nicht speichern.")); }
   $("recs").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -478,6 +1097,7 @@ function openForm(mode, b = {}) {
   $("f-subtitle").value = b.subtitle || "";
   $("f-award").value = b.award || "";
   $("f-review").value = b.review || "";
+  $("f-hidden").checked = mode === "edit" && !!b.hidden;
   $("f-status").textContent = "";
   $("f-cover").value = "";
   resetCoverEditor(mode === "edit" ? b : null);
@@ -574,14 +1194,15 @@ async function saveForm(e) {
     rating: form.rating,
     cover,
     example: prev ? prev.example : false,
+    hidden: CLOUD && $("f-hidden").checked,
     createdAt: prev ? prev.createdAt : now,
     updatedAt: now,
   });
   $("f-save").disabled = true;
   try {
-    await store.putBook(book);
+    await lib.putBook(book);
     state.books.set(book.id, book);
-    if (!persistenceAsked) { persistenceAsked = true; store.requestPersistence(); }
+    if (!persistenceAsked && !CLOUD) { persistenceAsked = true; store.requestPersistence(); }
     closeForm();
     if (state.filter !== "Alle" && state.filter !== book.category) state.filter = "Alle";
     renderAll();
@@ -589,7 +1210,7 @@ async function saveForm(e) {
     const row = $("buch-" + book.id);
     if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (err) {
-    fs.textContent = "Speichern hat nicht geklappt. Ist der Speicher des Browsers voll?";
+    fs.textContent = errMsg(err, "Speichern hat nicht geklappt. Ist der Speicher des Browsers voll?");
   } finally {
     $("f-save").disabled = false;
   }
@@ -599,12 +1220,12 @@ async function removeBook(id) {
   const b = state.books.get(id);
   if (!b) return;
   try {
-    await store.deleteBook(id);
+    await lib.deleteBook(id);
     state.books.delete(id);
     state.confirmId = null;
     renderAll();
     setStatus("„" + b.title + "“ entfernt.");
-  } catch (e) { setStatus("Entfernen hat nicht geklappt."); }
+  } catch (e) { setStatus(errMsg(e, "Entfernen hat nicht geklappt.")); }
 }
 
 /* Claude ergänzt leere Felder */
@@ -642,7 +1263,7 @@ function applyFill(f) {
   $("f-status").textContent = filled.length ? "Ergänzt: " + filled.join(", ") + ". Bitte kurz prüfen." : "Alle Felder waren schon ausgefüllt.";
 }
 
-/* ---------- Beispiele ---------- */
+/* ---------- Beispiele (nur ohne Konto) ---------- */
 
 async function loadExamples() {
   try {
@@ -660,7 +1281,7 @@ async function loadExamples() {
 
 async function removeExamples() {
   const ex = allBooks().filter((b) => b.example);
-  for (const b of ex) { await store.deleteBook(b.id); state.books.delete(b.id); }
+  for (const b of ex) { await lib.deleteBook(b.id); state.books.delete(b.id); }
   if (state.rec && state.rec.source === "beispiel") state.rec = null;
   renderAll();
   setStatus("Beispiele entfernt.");
@@ -676,17 +1297,29 @@ function openSettings() {
   $("s-data-status").textContent = "";
   $("import-choice").hidden = true;
   resetWipe();
-  store.getSetting("lastExport").then((d) => {
-    $("s-backup-note").textContent = "Deine Bibliothek liegt nur in diesem Browser. Exportiere sie regelmäßig als Datei, um sie zu sichern oder auf ein anderes Gerät zu bringen." +
-      (d ? " Letzter Export: " + new Date(d).toLocaleDateString("de-DE") + "." : " Bisher noch kein Export.");
-  }).catch(() => {});
+  if (CLOUD && state.me) {
+    $("s-account").textContent = "Angemeldet als " + (state.profile.display_name || "–") + " (" + state.me.email + ").";
+    $("s-display").value = state.profile.display_name;
+    $("s-account-status").textContent = "";
+    resetDeleteAccount();
+    $("s-backup-note").textContent = "Deine Bibliothek liegt in deinem Konto und ist auf jedem Gerät da, auf dem du dich anmeldest. Zusätzlich kannst du sie als Datei sichern.";
+    localBooks().then((l) => { $("s-migrate").hidden = !l.length; $("s-migrate").textContent = "Bücher von diesem Gerät übernehmen (" + l.length + ")"; });
+  } else {
+    store.getSetting("lastExport").then((d) => {
+      $("s-backup-note").textContent = "Deine Bibliothek liegt nur in diesem Browser. Exportiere sie regelmäßig als Datei, um sie zu sichern oder auf ein anderes Gerät zu bringen." +
+        (d ? " Letzter Export: " + new Date(d).toLocaleDateString("de-DE") + "." : " Bisher noch kein Export.");
+    }).catch(() => {});
+  }
   showPanel("settings-panel", true);
 }
 
 async function saveName() {
-  state.libraryName = $("s-name").value.trim().slice(0, 80);
-  await store.setSetting("libraryName", state.libraryName);
-  renderHeader();
+  const name = $("s-name").value.trim().slice(0, 80);
+  try {
+    await lib.setLibraryName(name);
+    state.libraryName = name;
+    renderHeader();
+  } catch (e) { $("s-data-status").textContent = errMsg(e, "Speichern hat nicht geklappt."); }
 }
 
 async function saveKey() {
@@ -720,7 +1353,7 @@ async function exportLibrary() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  await store.setSetting("lastExport", new Date().toISOString());
+  await store.setSetting("lastExport", new Date().toISOString()).catch(() => {});
   st.textContent = nBooks(real.length) + " exportiert.";
 }
 
@@ -746,27 +1379,28 @@ async function doImport(mode) {
   const st = $("s-data-status");
   if (!data) return;
   $("import-choice").hidden = true;
+  st.textContent = "Wird importiert …";
   try {
     if (mode === "replace") {
-      await store.clearBooks();
-      await store.putBooks(data.books);
+      await lib.clearBooks();
+      await lib.putBooks(data.books);
       state.books = new Map(data.books.map((b) => [b.id, b]));
       state.rec = data.recommendation;
-      if (state.rec) await store.setSetting("recommendation", state.rec); else await store.deleteSetting("recommendation");
-      if (data.libraryName && !state.libraryName) { state.libraryName = data.libraryName; await store.setSetting("libraryName", state.libraryName); }
+      await lib.setRec(state.rec);
+      if (data.libraryName && !state.libraryName) { state.libraryName = data.libraryName; await lib.setLibraryName(state.libraryName); }
       st.textContent = nBooks(data.books.length) + " importiert.";
     } else {
       const { toWrite, added, updated } = store.mergeBooks(allBooks(), data.books);
-      await store.putBooks(toWrite);
+      await lib.putBooks(toWrite);
       toWrite.forEach((b) => state.books.set(b.id, b));
-      if (!state.rec && data.recommendation) { state.rec = data.recommendation; await store.setSetting("recommendation", state.rec); }
+      if (!state.rec && data.recommendation) { state.rec = data.recommendation; await lib.setRec(state.rec); }
       st.textContent = nBooks(added) + " ergänzt, " + updated + " aktualisiert.";
     }
-    if (!persistenceAsked) { persistenceAsked = true; store.requestPersistence(); }
+    if (!persistenceAsked && !CLOUD) { persistenceAsked = true; store.requestPersistence(); }
     renderAll();
     $("s-name").value = state.libraryName;
   } catch (err) {
-    st.textContent = "Der Import hat nicht geklappt. Ist der Speicher des Browsers voll?";
+    st.textContent = errMsg(err, "Der Import hat nicht geklappt. Ist der Speicher des Browsers voll?");
   } finally {
     state.pendingImport = null;
   }
@@ -774,7 +1408,7 @@ async function doImport(mode) {
 
 function resetWipe() {
   const box = $("wipe-actions");
-  box.replaceChildren(button("btn danger", "Alle Bücher und Einstellungen löschen", askWipe, "s-wipe"));
+  box.replaceChildren(button("btn danger", CLOUD ? "Alle meine Bücher löschen" : "Alle Bücher und Einstellungen löschen", askWipe, "s-wipe"));
 }
 function askWipe() {
   const box = $("wipe-actions");
@@ -786,10 +1420,14 @@ function askWipe() {
   $("s-wipe-no").focus();
 }
 async function wipe() {
-  await store.clearBooks();
-  for (const k of ["recommendation", "libraryName", "apiKey", "model", "sort", "filter", "lastExport"]) await store.deleteSetting(k);
-  state.books = new Map(); state.rec = null; state.libraryName = ""; state.apiKey = ""; state.model = DEFAULT_MODEL;
-  state.filter = "Alle"; state.sort = "inv"; $("sort-select").value = "inv";
+  try {
+    await lib.clearBooks();
+    await lib.setRec(null);
+  } catch (e) { $("s-data-status").textContent = errMsg(e, "Löschen hat nicht geklappt."); return; }
+  const keys = CLOUD ? ["recommendation", "sort", "filter", "lastExport"] : ["recommendation", "libraryName", "apiKey", "model", "sort", "filter", "lastExport"];
+  for (const k of keys) await store.deleteSetting(k).catch(() => {});
+  state.books = new Map(); state.rec = null; state.filter = "Alle"; state.sort = "inv"; $("sort-select").value = "inv";
+  if (!CLOUD) { state.libraryName = ""; state.apiKey = ""; state.model = DEFAULT_MODEL; }
   resetWipe();
   $("settings-panel").hidden = true;
   renderAll();
@@ -803,6 +1441,7 @@ function wireEvents() {
   $("settings-open").addEventListener("click", () => ($("settings-panel").hidden ? openSettings() : ($("settings-panel").hidden = true)));
   $("settings-close").addEventListener("click", () => { $("settings-panel").hidden = true; });
   $("examples-remove").addEventListener("click", removeExamples);
+  $("notice-close").addEventListener("click", () => showNotice(""));
 
   $("sort-select").addEventListener("change", (e) => {
     state.sort = e.target.value;
@@ -833,6 +1472,22 @@ function wireEvents() {
   $("import-merge").addEventListener("click", () => doImport("merge"));
   $("import-replace").addEventListener("click", () => doImport("replace"));
   $("import-cancel").addEventListener("click", () => { state.pendingImport = null; $("import-choice").hidden = true; });
+
+  // Konto und Freunde
+  $("auth-form").addEventListener("submit", submitAuth);
+  $("auth-tab-in").addEventListener("click", () => { setAuthMode("in"); $("a-status").textContent = ""; });
+  $("auth-tab-up").addEventListener("click", () => { setAuthMode("up"); $("a-status").textContent = ""; });
+  $("s-signout").addEventListener("click", signOut);
+  $("s-display").addEventListener("change", saveDisplayName);
+  $("s-migrate").addEventListener("click", () => { $("settings-panel").hidden = true; checkMigration(true); });
+  $("migrate-yes").addEventListener("click", migrate);
+  $("migrate-no").addEventListener("click", dismissMigration);
+  $("friends-open").addEventListener("click", openFriends);
+  $("friends-close").addEventListener("click", () => { $("friends-panel").hidden = true; });
+  $("back-mine").addEventListener("click", showMine);
+  $("invite-wa").addEventListener("click", onInviteWhatsApp);
+  $("invite-copy").addEventListener("click", onInviteCopy);
+  $("invite-share").addEventListener("click", onInviteShare);
 }
 
 init();

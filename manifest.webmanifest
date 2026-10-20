@@ -1,6 +1,6 @@
 {
-  "name": "Meine Bibliothek",
-  "short_name": "Bibliothek",
+  "name": "Bookstome",
+  "short_name": "Bookstome",
   "description": "Persönliches Leseinventar mit Covern, Kategorien, Sternen und Buchempfehlungen von Claude.",
   "lang": "de",
   "start_url": "./",

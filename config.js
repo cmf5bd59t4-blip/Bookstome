@@ -1,6 +1,18 @@
 // Zentrale Einstellungen der App. Wer Kategorien, Modelle oder Texte ändern will, fängt hier an.
 
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "2.0.0";
+export const APP_NAME = "Bookstome";
+
+/**
+ * Verbindung zu Supabase für Konten, gemeinsame Datenbank und Freunde.
+ * Beide Werte stehen in Supabase unter Project Settings → API Keys bzw. Data API.
+ * SUPABASE_KEY ist der "Publishable key" (sb_publishable_…) oder der ältere "anon public" Key.
+ * Diese Werte sind öffentlich; die Daten schützt die Datenbank selbst (Row Level Security).
+ * NIEMALS den "Secret key" bzw. "service_role" Key eintragen.
+ * Beide leer lassen: Dann bleibt jede Bibliothek wie bisher nur im eigenen Browser, ohne Konto und Freunde.
+ */
+export const SUPABASE_URL = "https://ziiamxyvtpxhhxrwallw.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_njsXuvhAXTm6jKqOJg2GqQ_IWKt5pme";
 
 /** Format-Kennung für Export-Dateien. Bei inkompatiblen Änderungen FORMAT_VERSION erhöhen. */
 export const FORMAT = "meine-bibliothek";
