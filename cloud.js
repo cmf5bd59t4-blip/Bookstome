@@ -77,7 +77,11 @@ function saveSession(s, silent = false) {
 function fromAuth(d) {
   if (!d || !d.access_token || !d.user) return null;
   const expiresAt = d.expires_at ? d.expires_at * 1000 : Date.now() + (Number(d.expires_in) || 3600) * 1000;
-  return { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: expiresAt, user: { id: d.user.id, email: d.user.email || "" } };
+  const meta = d.user.user_metadata || {};
+  return {
+    access_token: d.access_token, refresh_token: d.refresh_token, expires_at: expiresAt,
+    user: { id: d.user.id, email: d.user.email || "", name: String(meta.display_name || "").slice(0, 60) },
+  };
 }
 
 /** Wird aufgerufen, wenn die Sitzung abläuft und nicht erneuert werden kann. */
@@ -202,18 +206,26 @@ export async function getProfile() {
   return Array.isArray(rows) && rows[0] ? rows[0] : null;
 }
 
-async function ensureProfile(name) {
-  const fallback = (currentUser().email || "").split("@")[0].slice(0, 60);
+/** Legt das Profil an, falls es fehlt (z. B. wenn die Datenbank beim Registrieren noch nicht eingerichtet war). */
+export async function ensureProfile(name) {
+  const u = currentUser();
   const p = await getProfile();
+  if (p && p.display_name) return p;
+  let metaName = u.name || "";
+  if (!name && !metaName) {
+    try { const full = await authed("/auth/v1/user"); metaName = String((full && full.user_metadata && full.user_metadata.display_name) || ""); } catch (e) { /* egal */ }
+  }
+  const fallback = (metaName || (u.email || "").split("@")[0]).slice(0, 60);
   if (!p) {
     await authed("/rest/v1/profiles?on_conflict=id", {
       method: "POST",
       body: { id: uid(), display_name: (name || fallback).slice(0, 60) },
       prefer: "resolution=ignore-duplicates,return=minimal",
     });
-  } else if (!p.display_name) {
+  } else {
     await updateProfile({ display_name: (name || fallback).slice(0, 60) });
   }
+  return getProfile();
 }
 
 export function updateProfile(patch) {

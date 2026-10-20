@@ -230,8 +230,9 @@ async function showAuth(message) {
   if (!state.pendingInvite) return;
   try {
     const info = await cloud.inviteInfo(state.pendingInvite);
-    if (info && info.name) {
-      $("invite-text").textContent = info.name + " lädt dich zu " + APP_NAME + " ein. Lege ein Konto an. Danach seht ihr gegenseitig eure Bibliotheken, mit Sternen und Kurzrezensionen.";
+    if (info) {
+      $("invite-text").textContent = (info.name ? info.name + " lädt dich zu " + APP_NAME + " ein." : "Du wurdest zu " + APP_NAME + " eingeladen.") +
+        " Lege ein Konto an. Danach seht ihr gegenseitig eure Bibliotheken, mit Sternen und Kurzrezensionen.";
     } else {
       clearInvite();
       $("invite-text").textContent = "Dieser Einladungslink ist nicht mehr gültig. Hast du schon ein Konto, melde dich einfach an. Sonst bitte um einen neuen Link.";
@@ -293,7 +294,7 @@ async function startCloud(user) {
   } catch (e) { /* kein Zwischenspeicher */ }
   if (!state.books.size) $("books").replaceChildren(el("li", "empty", "Bibliothek wird geladen …"));
   try {
-    const [profile, books, friends] = await Promise.all([cloud.getProfile(), cloud.listBooks(), cloud.listFriends()]);
+    const [profile, books, friends] = await Promise.all([cloud.ensureProfile(""), cloud.listBooks(), cloud.listFriends()]);
     state.profile = { display_name: (profile && profile.display_name) || "", library_name: (profile && profile.library_name) || "" };
     state.libraryName = state.profile.library_name;
     state.rec = profile && profile.recommendation && Array.isArray(profile.recommendation.items) ? profile.recommendation : null;
