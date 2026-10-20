@@ -184,6 +184,7 @@ function fillSelects() {
 
 function applyCloudChrome() {
   $("friends-open").hidden = false;
+  $("tab-friends").hidden = false;
   $("account-group").hidden = false;
   $("f-hidden-field").hidden = false;
   $("wipe-title").textContent = "Alle meine Bücher löschen";
@@ -463,8 +464,12 @@ function showMine() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-async function openFriends() {
-  if (!$("friends-panel").hidden) { $("friends-panel").hidden = true; return; }
+async function openFriends(keepOpen) {
+  if (!$("friends-panel").hidden) {
+    if (keepOpen === true) { $("friends-panel").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    $("friends-panel").hidden = true;
+    return;
+  }
   state.confirmFriend = null;
   renderFriendList();
   showPanel("friends-panel", true);
@@ -632,6 +637,8 @@ function renderHeader() {
   $("back-mine").hidden = !fv;
   $("friends-open").hidden = !CLOUD || fv;
   if (CLOUD) $("friends-open").textContent = state.friends.length ? "Freunde (" + state.friends.length + ")" : "Freunde einladen";
+  $("tab-lib").setAttribute("aria-current", String(!fv));
+  $("tab-friends").setAttribute("aria-current", String(fv));
   const ratingOpt = $("sort-select").querySelector('option[value="rating"]');
   if (ratingOpt) ratingOpt.textContent = fv ? "Bewertung" : "Meine Bewertung";
   renderShelves();
@@ -640,15 +647,17 @@ function renderHeader() {
 
 function renderShelves() {
   const nav = $("shelves");
-  const show = CLOUD && !!state.me && state.friends.length > 0;
+  const show = CLOUD && !!state.me;
   nav.hidden = !show;
   if (!show) return;
-  const items = [{ id: null, label: "Meine Bibliothek" }, ...state.friends.map((f) => ({ id: f.id, label: friendName(f) }))];
+  const items = [{ id: null, label: state.friends.length ? "Meine" : "Meine Bibliothek" }, ...state.friends.map((f) => ({ id: f.id, label: friendName(f) }))];
+  const add = button("shelf-add", "+", () => openFriends(true), "shelf-add");
+  add.setAttribute("aria-label", "Freund einladen");
   nav.replaceChildren(...items.map((it) => {
     const b = button("chip", it.label, () => (it.id ? openFriend(it.id) : showMine()), it.id ? "shelf-" + it.id : "shelf-mine");
     b.setAttribute("aria-pressed", String(state.view === it.id));
     return b;
-  }));
+  }), add);
 }
 
 function renderStats() {
@@ -659,8 +668,7 @@ function renderStats() {
   $("stat-avg").textContent = vals.length
     ? (vals.reduce((s, v) => s + v, 0) / vals.length).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
     : "–";
-  const years = books.map((b) => b.year).filter(Boolean);
-  $("stat-span").textContent = years.length ? Math.min(...years) + "–" + Math.max(...years) : "–";
+  $("stat-fav").textContent = books.length ? String(books.filter((b) => b.rating === 5).length) : "–";
 }
 
 function renderExampleBanner() {
@@ -726,7 +734,7 @@ function renderList() {
         const f = state.friends[0];
         actions.append(button("btn quiet", "Bibliothek von " + friendName(f) + " ansehen", () => openFriend(f.id)));
       } else {
-        actions.append(button("btn quiet", "Freunde einladen", openFriends));
+        actions.append(button("btn quiet", "Freunde einladen", () => openFriends(true)));
       }
       actions.append(button("btn quiet", "Bibliothek importieren", () => $("s-import").click()));
     } else {
@@ -768,12 +776,15 @@ function buildBookBase(b, own) {
   } else {
     coverCell.append(typeCover(b));
   }
+  if (b.rating === 5) {
+    const ear = el("span", "ear");
+    ear.title = "Eselsohr: Lieblingsbuch mit 5 Sternen";
+    coverCell.append(ear);
+  }
   li.append(coverCell);
 
   const head = el("div", "head");
-  const top = el("div", "topline");
-  top.append(el("span", "author", b.author), el("span", "inv", "Inv. " + pad(b.inv)));
-  head.append(top, el("h2", "title", b.title));
+  head.append(el("h2", "title", b.title), el("div", "byline author", b.author));
   if (b.subtitle) head.append(el("div", "subtitle", b.subtitle));
   const meta = el("div", "meta");
   meta.append(el("span", "cat", b.category));
@@ -783,6 +794,7 @@ function buildBookBase(b, own) {
   if (b.award) meta.append(el("span", "tag", b.award));
   if (b.example) meta.append(el("span", "tag example", "Beispiel"));
   if (own && CLOUD && b.hidden) meta.append(el("span", "tag private", "Nur für dich"));
+  meta.append(el("span", "inv", "Inv. " + pad(b.inv)));
   head.append(meta);
   li.append(head);
 
@@ -1435,6 +1447,22 @@ async function wipe() {
   setStatus("Alles gelöscht.");
 }
 
+/* ---------- Leiste unten (Handy) ---------- */
+
+function tabLibrary() {
+  if (viewingFriend()) { showMine(); return; }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function tabRecs() {
+  if (viewingFriend()) showMine();
+  if ($("recs").hidden) { showNotice("Lege zuerst ein paar Bücher an und bewerte sie. Dann schlägt Claude dir passende nächste Bücher vor."); return; }
+  $("recs").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function tabAdd() {
+  if (viewingFriend()) showMine();
+  if ($("form-panel").hidden) openForm("add"); else $("form-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /* ---------- Ereignisse ---------- */
 
 function wireEvents() {
@@ -1483,7 +1511,11 @@ function wireEvents() {
   $("s-migrate").addEventListener("click", () => { $("settings-panel").hidden = true; checkMigration(true); });
   $("migrate-yes").addEventListener("click", migrate);
   $("migrate-no").addEventListener("click", dismissMigration);
-  $("friends-open").addEventListener("click", openFriends);
+  $("friends-open").addEventListener("click", () => openFriends(false));
+  $("tab-lib").addEventListener("click", tabLibrary);
+  $("tab-friends").addEventListener("click", () => openFriends(true));
+  $("tab-recs").addEventListener("click", tabRecs);
+  $("tab-add").addEventListener("click", tabAdd);
   $("friends-close").addEventListener("click", () => { $("friends-panel").hidden = true; });
   $("back-mine").addEventListener("click", showMine);
   $("invite-wa").addEventListener("click", onInviteWhatsApp);

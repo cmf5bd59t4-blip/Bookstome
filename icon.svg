@@ -1,8 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#1F5468"/>
-  <rect x="120" y="150" width="56" height="230" rx="6" fill="#F3F5F3"/>
-  <rect x="188" y="120" width="56" height="260" rx="6" fill="#C9D9DE"/>
-  <rect x="256" y="170" width="48" height="210" rx="6" fill="#F3F5F3"/>
-  <rect x="318" y="140" width="56" height="246" rx="6" fill="#F1B54A" transform="rotate(12 346 263)"/>
-  <rect x="104" y="384" width="304" height="14" rx="4" fill="#F3F5F3"/>
+  <rect width="512" height="512" rx="112" fill="#1D2440"/>
+  <g transform="translate(0 -14)">
+    <rect x="112" y="182" width="56" height="210" rx="8" fill="#E2553A"/>
+    <rect x="112" y="214" width="56" height="8" fill="#1D2440" opacity="0.35"/>
+    <rect x="178" y="138" width="62" height="254" rx="8" fill="#F7F4EE"/>
+    <rect x="178" y="176" width="62" height="12" fill="#1D2440"/>
+    <rect x="250" y="200" width="54" height="192" rx="8" fill="#2C8C86"/>
+    <rect x="354" y="166" width="56" height="226" rx="8" fill="#E9B03C" transform="rotate(-14 354 392)"/>
+    <rect x="96" y="392" width="324" height="18" rx="5" fill="#F7F4EE"/>
+  </g>
 </svg>

@@ -95,7 +95,7 @@ cover.js                  Cover-Zuschnitt (Verschieben, Zoomen, JPEG-Ausgabe)
 app.js                    Oberfläche und Abläufe
 styles.css                Gestaltung, helles und dunkles Farbschema
 beispiel-bibliothek.json  Beispielbibliothek für den ersten Start
-icon*.png, icon.svg       App-Icons
+icon*.png, icon.svg       App-Icons (Regal-Logo; icon-maskable-512.png für Android, apple-touch-icon.png für iPhone)
 ```
 
 ## Datenformat

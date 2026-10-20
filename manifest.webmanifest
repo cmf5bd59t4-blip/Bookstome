@@ -1,17 +1,17 @@
 {
   "name": "Bookstome",
   "short_name": "Bookstome",
-  "description": "Persönliches Leseinventar mit Covern, Kategorien, Sternen und Buchempfehlungen von Claude.",
+  "description": "Persönliches Leseinventar mit Covern, Sternen, Empfehlungen von Claude und den Bibliotheken deiner Freunde.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#F3F5F3",
-  "theme_color": "#1F5468",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
   ]
 }

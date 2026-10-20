@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Meine Bibliothek</title>
   <meta name="description" content="Persönliches Leseinventar mit Mini-Covern, Kategorien, Sternebewertung und Buchempfehlungen von Claude. Mit Freunden teilen, die eingeladen sind.">
-  <meta name="theme-color" content="#1F5468">
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0F1113" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -13,7 +14,7 @@
   <meta name="apple-mobile-web-app-title" content="Bookstome">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,700;1,500&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -24,19 +25,22 @@
 
   <main class="wrap">
     <header>
-      <nav class="shelves lib-only" id="shelves" hidden aria-label="Bibliotheken"></nav>
-      <div class="eyebrow" id="eyebrow">Privates Leseinventar</div>
+      <div class="brand">
+        <img src="icon.svg" width="30" height="30" alt="">
+        <div class="eyebrow" id="eyebrow">Privates Leseinventar</div>
+      </div>
       <h1 id="lib-name">Meine Bibliothek</h1>
       <p class="lede" id="lede">Gelesen und für gut befunden. Zu jedem Buch eine kurze Einordnung, eine Kategorie und deine eigene Wertung von einem bis fünf Sternen.</p>
       <dl class="stats lib-only">
         <div class="stat"><dt>Bücher</dt><dd id="stat-count">–</dd></div>
         <div class="stat"><dt>Bewertet</dt><dd id="stat-rated">–</dd></div>
         <div class="stat"><dt>Ø Sterne</dt><dd id="stat-avg">–</dd></div>
-        <div class="stat"><dt>Zeitspanne</dt><dd id="stat-span">–</dd></div>
+        <div class="stat"><dt>Eselsohren (5 Sterne)</dt><dd id="stat-fav">–</dd></div>
       </dl>
+      <nav class="shelves lib-only" id="shelves" hidden aria-label="Bibliotheken"></nav>
       <div class="header-actions lib-only">
-        <button type="button" class="btn" id="add-open">Buch hinzufügen</button>
-        <button type="button" class="btn quiet" id="friends-open" hidden>Freunde</button>
+        <button type="button" class="btn desk-only" id="add-open">Buch hinzufügen</button>
+        <button type="button" class="btn quiet desk-only" id="friends-open" hidden>Freunde</button>
         <button type="button" class="btn quiet" id="settings-open">Einstellungen und Daten</button>
         <button type="button" class="btn quiet" id="back-mine" hidden>Zurück zu meiner Bibliothek</button>
       </div>
@@ -293,5 +297,25 @@
       <span id="app-version"></span>
     </footer>
   </main>
+
+  <!-- Leiste unten auf dem Handy -->
+  <nav class="tabbar lib-only" id="tabbar" aria-label="Hauptmenü">
+    <button type="button" class="tab" id="tab-lib" aria-current="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 4h4v16h-4z"></path><path d="M10 4h4v16h-4z"></path><path d="M15.6 5.4l3.6-1 3 14.8-3.6 1z"></path></svg>
+      <span>Bibliothek</span>
+    </button>
+    <button type="button" class="tab" id="tab-friends" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20c.8-3.6 3.3-5.5 6.5-5.5s5.7 1.9 6.5 5.5"></path><circle cx="17" cy="9" r="2.5"></circle><path d="M17.5 14.5c2 .4 3.4 2 4 4.5"></path></svg>
+      <span>Freunde</span>
+    </button>
+    <button type="button" class="tab" id="tab-recs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.6 5.5 6 .8-4.4 4.2 1.1 6L12 16.6 6.7 19.5l1.1-6L3.4 9.3l6-.8z"></path></svg>
+      <span>Empfehlung</span>
+    </button>
+    <button type="button" class="tab add" id="tab-add">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12"></path><path d="M6 12h12"></path></svg>
+      <span>Buch</span>
+    </button>
+  </nav>
 </body>
 </html>

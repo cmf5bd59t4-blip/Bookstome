@@ -2,7 +2,7 @@
 // Strategie "Netz zuerst": Online gibt es immer die neueste Version, offline die zuletzt geladene.
 // Bei neuen Dateien die Liste unten ergänzen und CACHE hochzählen.
 
-const CACHE = "bibliothek-v2";
+const CACHE = "bibliothek-v3";
 const FILES = [
   "./",
   "./index.html",
@@ -18,6 +18,7 @@ const FILES = [
   "./icon.svg",
   "./icon-192.png",
   "./icon-512.png",
+  "./icon-maskable-512.png",
   "./apple-touch-icon.png",
 ];
 

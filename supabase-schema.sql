@@ -212,3 +212,6 @@ revoke all on function public.is_friend(uuid), public.create_invite(), public.in
 grant execute on function public.is_friend(uuid), public.create_invite(), public.accept_invite(text),
   public.my_friends(), public.remove_friend(uuid), public.delete_my_account() to authenticated;
 grant execute on function public.invite_info(text) to anon, authenticated;
+
+-- Supabase die neuen Tabellen und Funktionen sofort bekannt machen
+notify pgrst, 'reload schema';
